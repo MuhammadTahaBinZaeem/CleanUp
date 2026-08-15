@@ -13,47 +13,33 @@ def regex_once(text, pattern, repl, label):
     if c!=1: raise RuntimeError(f'{label}: expected one regex match, found {c}')
     return out
 
-# Provider-wide rename in deployable source/tests/docs (history documents are intentionally preserved).
-for p in ['server.js','public/app.js','public/index.html','tests/server.test.js','RENDER_DEPLOY.md','render.yaml','.env.example']:
+# Provider-wide rename in deployable source/tests/docs. Historical release notes are preserved.
+for p in ['server.js','public/app.js','public/index.html','tests/server.test.js','RENDER_DEPLOY.md','render.yaml','.env.example','README.md']:
     s=read(p).replace('GEMINI','FEATHERLESS').replace('Gemini','Featherless').replace('gemini','featherless')
     write(p,s)
 
 s=read('server.js')
 s=s.replace("const VERSION = '0.14.9';","const VERSION = '1.0.0';")
 
-# Featherless model IDs are owner/model and case-sensitive.
+# Featherless model IDs are owner/model and case-sensitive. Models are internal: users configure only one API key.
 s=regex_once(s,r"function normalizeModelName\(value\) \{.*?\n\}",'''function normalizeModelName(value) {
   const cleaned = String(value || '').trim();
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(cleaned) ? cleaned : '';
 }''','normalizeModelName')
 
-s=regex_once(s,r"function getFeatherlessConfig\(env = process\.env\) \{.*?\n\}",'''function getFeatherlessConfig(env = process.env) {
-  const rawKeys = [
-    env.FEATHERLESS_API_KEY_1 || env.FEATHERLESS_API_KEY,
-    env.FEATHERLESS_API_KEY_2,
-    env.FEATHERLESS_API_KEY_3
-  ];
-  const keys = [...new Set(rawKeys.map((value) => String(value || '').trim()).filter(Boolean))].slice(0, 3);
-  const requestedModels = [
-    env.FEATHERLESS_MODEL_1 || env.FEATHERLESS_MODEL || 'Qwen/Qwen3.6-35B-A3B',
-    env.FEATHERLESS_MODEL_2 || 'Qwen/Qwen3.6-27B',
-    env.FEATHERLESS_MODEL_3 || 'google/gemma-4-31B-it'
-  ];
-  const models = [...new Set(requestedModels.map(normalizeModelName).filter(Boolean))].slice(0, 3);
-  if (!models.length) models.push('Qwen/Qwen3.6-35B-A3B');
-  return { keys, models };
+s=regex_once(s,r"function getFeatherlessConfig\(env = process\.env\) \{.*?\n\}",'''const AUTO_FEATHERLESS_MODELS = Object.freeze([
+  'Qwen/Qwen3.6-35B-A3B',
+  'Qwen/Qwen3.6-27B',
+  'google/gemma-4-31B-it'
+]);
+function getFeatherlessConfig(env = process.env) {
+  const apiKey = String(env.FEATHERLESS_API_KEY || env.FEATHERLESS_API_KEY_1 || '').trim();
+  return { keys: apiKey ? [apiKey] : [], models: [...AUTO_FEATHERLESS_MODELS] };
 }''','getFeatherlessConfig')
 
-# Configurable HTTPS Featherless base URL, defaulting to the documented OpenAI-compatible API.
+# Official OpenAI-compatible Featherless endpoint; users do not configure provider routing.
 host="const HOST = process.env.HOST || '0.0.0.0';"
-insert=host+'''\nfunction normalizeFeatherlessBaseUrl(value) {
-  try {
-    const url = new URL(String(value || '').trim());
-    if (url.protocol !== 'https:') return 'https://api.featherless.ai/v1';
-    return `${url.origin}${url.pathname.replace(/\\/+$/, '') || '/v1'}`;
-  } catch { return 'https://api.featherless.ai/v1'; }
-}
-const FEATHERLESS_BASE_URL = normalizeFeatherlessBaseUrl(process.env.FEATHERLESS_BASE_URL || 'https://api.featherless.ai/v1');'''
+insert=host+"\nconst FEATHERLESS_BASE_URL = 'https://api.featherless.ai/v1';"
 s=once(s,host,insert,'base url insertion')
 
 s=regex_once(s,r"function featherlessFailureKind\(status, detail = ''\) \{.*?\n\}\nfunction orderedKeySlots",'''function featherlessFailureKind(status, detail = '') {
@@ -121,12 +107,13 @@ s=regex_once(s,r"async function callFeatherlessOnce\(\{ apiKey, model, body, sig
 }
 async function analyzeWithFeatherless''','Featherless API call')
 
-# Body now includes the exact model and uses OpenAI-compatible vision content.
+# Body includes the exact automatically selected model and uses OpenAI-compatible vision content.
 s=s.replace("  const body = createFeatherlessRequestBody({ mimeType, data });\n",'')
 s=s.replace("  for (const model of models) {\n    if (unavailableFeatherlessModels.has(model)) continue;", "  for (const model of models) {\n    if (unavailableFeatherlessModels.has(model)) continue;\n    const body = createFeatherlessRequestBody({ mimeType, data, model });")
 s=s.replace("      if (attempt.kind === 'model') { unavailableFeatherlessModels.add(model); switchModel = true; break; }", "      if (attempt.kind === 'model') { unavailableFeatherlessModels.add(model); switchModel = true; break; }\n      if (attempt.kind === 'model-cold') { switchModel = true; break; }")
+s=s.replace("if (!keys.length) { const error = new Error('Featherless is not configured on this deployment'); error.code = 'NO_FEATHERLESS_KEY'; error.status = 503; throw error; }", "if (!keys.length) { const error = new Error('Featherless is not configured on this deployment'); error.code = 'NO_FEATHERLESS_KEY'; error.status = 503; throw error; }")
 
-# Export the request-body helper for contract tests.
+# Export request-builder for contract tests.
 s=s.replace('normalizeWasteResult, scoreFacilityCompatibility, getFeatherlessConfig, normalizeModelName, featherlessFailureKind,', 'normalizeWasteResult, scoreFacilityCompatibility, getFeatherlessConfig, normalizeModelName, featherlessFailureKind, createFeatherlessRequestBody,')
 write('server.js',s)
 
@@ -135,20 +122,55 @@ for p in ['package.json','package-lock.json','public/app.js','public/index.html'
     s=read(p).replace('0.14.9','1.0.0')
     write(p,s)
 
-# Provider defaults/config in env and Render blueprint.
-for p in ['.env.example','render.yaml','RENDER_DEPLOY.md']:
-    s=read(p)
-    s=s.replace('featherless-3.6-flash','Qwen/Qwen3.6-35B-A3B').replace('featherless-3.5-flash-lite','google/gemma-4-31B-it').replace('featherless-3.5-flash','Qwen/Qwen3.6-27B')
-    write(p,s)
-
-# Ensure the base URL is visible/configurable.
+# One-key deployment configuration. Model choice is automatic and intentionally absent from env/Render config.
 env=read('.env.example')
-if 'FEATHERLESS_BASE_URL=' not in env:
-    env=env.replace('FEATHERLESS_MODEL_3=google/gemma-4-31B-it\n','FEATHERLESS_MODEL_3=google/gemma-4-31B-it\nFEATHERLESS_BASE_URL=https://api.featherless.ai/v1\n')
+env=re.sub(r'^FEATHERLESS_API_KEY(?:_[123])?=.*\n?', '', env, flags=re.M)
+env=re.sub(r'^FEATHERLESS_MODEL(?:_[123])?=.*\n?', '', env, flags=re.M)
+env=re.sub(r'^FEATHERLESS_BASE_URL=.*\n?', '', env, flags=re.M)
+env='FEATHERLESS_API_KEY=your_featherless_key_here\n'+env.lstrip()
 write('.env.example',env)
+
 yaml=read('render.yaml')
-if 'FEATHERLESS_BASE_URL' not in yaml:
-    yaml=yaml.replace('      - key: FEATHERLESS_MODEL_1\n', '      - key: FEATHERLESS_BASE_URL\n        value: https://api.featherless.ai/v1\n      - key: FEATHERLESS_MODEL_1\n')
+yaml=re.sub(r'      - key: FEATHERLESS_BASE_URL\n        value: .*\n', '', yaml)
+yaml=re.sub(r'      - key: FEATHERLESS_MODEL_[123]\n        value: .*\n', '', yaml)
+yaml=re.sub(r'      - key: FEATHERLESS_API_KEY_[123]\n        sync: false\n', '', yaml)
+anchor='      - key: NODE_ENV\n        value: production\n'
+if '      - key: FEATHERLESS_API_KEY\n' not in yaml:
+    yaml=yaml.replace(anchor, anchor+'      - key: FEATHERLESS_API_KEY\n        sync: false\n')
 write('render.yaml',yaml)
 
-print('Applied Featherless provider migration.')
+# Public docs: exactly one Featherless key; model routing is internal.
+readme=read('README.md')
+readme=re.sub(r'## Featherless keys and model failover\n.*?\n## Local setup', '''## Featherless API and automatic model routing
+
+All Featherless credentials stay on the server. You configure **one key only**:
+
+```env
+FEATHERLESS_API_KEY=your_key_here
+```
+
+There is no model setting in the user or Render configuration. cleanup automatically routes each scan through its internal ordered pool of vision-capable Featherless models and falls back when a model is cold, unavailable, inaccessible, rate-limited, or temporarily failing. The exact model that succeeds can still be reported for debugging, but you never have to choose it.
+
+## Local setup''', readme, count=1, flags=re.S)
+readme=readme.replace('Up to **3 Featherless API keys** with rotation/failover.','One server-side **Featherless API key**.')
+readme=readme.replace('Up to **3 configurable Featherless model names** with model fallback.','Automatic internal routing across multiple vision-capable Featherless models.')
+readme=readme.replace('Without a Featherless key,','Without a Featherless key,')
+readme=readme.replace('- three optional Featherless key slots\n- three configurable model slots','- one Featherless API key slot\n- automatic internal vision-model routing')
+write('README.md',readme)
+
+deploy=read('RENDER_DEPLOY.md')
+deploy=re.sub(r'FEATHERLESS_API_KEY_[123]', 'FEATHERLESS_API_KEY', deploy)
+deploy=re.sub(r'^.*FEATHERLESS_MODEL_[123].*\n?', '', deploy, flags=re.M)
+deploy=re.sub(r'^.*FEATHERLESS_BASE_URL.*\n?', '', deploy, flags=re.M)
+deploy=deploy.replace('one to three Featherless keys','one Featherless key').replace('three Featherless keys','one Featherless key')
+write('RENDER_DEPLOY.md',deploy)
+
+# Add final release note while preserving historical Gemini references in old entries.
+changelog=read('CHANGELOG.md')
+if '## 1.0.0 — Featherless automatic vision routing' not in changelog:
+    marker='All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.\n'
+    entry='''\n## 1.0.0 — Featherless automatic vision routing\n\n- Replaced the Gemini runtime with Featherless's OpenAI-compatible vision API.\n- Deployment now needs exactly one `FEATHERLESS_API_KEY`; users do not configure model names.\n- cleanup automatically routes across an internal pool of vision-capable Featherless models and falls back on cold, unavailable, access-limited, quota-limited, or transient routes.\n- Preserved deterministic hazardous-waste overrides, signed action proofs, facility matching, impact verification, rate limits, PWA behavior, and all prior safety boundaries.\n- Synchronized the application, manifest, service-worker, Render deployment and tests to `1.0.0`.\n'''
+    changelog=changelog.replace(marker, marker+entry)
+write('CHANGELOG.md',changelog)
+
+print('Applied one-key Featherless automatic-routing migration.')
