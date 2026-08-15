@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: cleanup
+    runtime: node
+    region: singapore
+    plan: free
+    autoDeployTrigger: commit
+    buildCommand: npm ci && npm run check
+    startCommand: npm start
+    healthCheckPath: /healthz
+    maxShutdownDelaySeconds: 20
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: GEMINI_MODEL_1
+        value: gemini-3.6-flash
+      - key: GEMINI_MODEL_2
+        value: gemini-3.5-flash
+      - key: GEMINI_MODEL_3
+        value: gemini-3.5-flash-lite
+      - key: GEMINI_API_KEY_1
+        sync: false
+      - key: GEMINI_API_KEY_2
+        sync: false
+      - key: GEMINI_API_KEY_3
+        sync: false
+      - key: ACTION_RECEIPT_SECRET
+        generateValue: true
+      - key: ACTION_PLAN_MAX_DAYS
+        value: "30"
+      - key: ACTION_PROOF_TTL_MS
+        value: "2592000000"
+      - key: FACILITY_PROOF_TTL_MS
+        value: "86400000"
+      - key: ACTION_COMPLETION_TTL_MS
+        value: "157680000000"
+      - key: ACTION_RATE_LIMIT_MAX
+        value: "60"
+      - key: ACTION_RATE_LIMIT_WINDOW_MS
+        value: "600000"
+      - key: GEMINI_ATTEMPT_TIMEOUT_MS
+        value: "15000"
+      - key: GEMINI_TOTAL_TIMEOUT_MS
+        value: "45000"
+      - key: GEMINI_QUOTA_COOLDOWN_MS
+        value: "60000"
+      - key: GEMINI_MODEL_ACCESS_COOLDOWN_MS
+        value: "900000"
+      - key: GEMINI_RESPONSE_MAX_BYTES
+        value: "2097152"
+      - key: AI_RATE_LIMIT_MAX
+        value: "10"
+      - key: AI_RATE_LIMIT_WINDOW_MS
+        value: "600000"
+      - key: AI_GLOBAL_RATE_LIMIT_MAX
+        value: "120"
+      - key: AI_GLOBAL_RATE_LIMIT_WINDOW_MS
+        value: "600000"
+      - key: LOOKUP_RATE_LIMIT_MAX
+        value: "60"
+      - key: LOOKUP_RATE_LIMIT_WINDOW_MS
+        value: "600000"
+      - key: NOMINATIM_MIN_INTERVAL_MS
+        value: "1100"
+      - key: GEOCODE_CACHE_MS
+        value: "86400000"
+      - key: OUTBOUND_QUEUE_MAX
+        value: "25"
+      - key: OVERPASS_RESPONSE_MAX_BYTES
+        value: "5242880"
+      - key: GEOCODE_RESPONSE_MAX_BYTES
+        value: "1048576"
+      - key: NOMINATIM_BASE_URL
+        value: https://nominatim.openstreetmap.org/search
+      - key: OVERPASS_URL
+        value: https://overpass-api.de/api/interpreter
+      - key: SHUTDOWN_GRACE_MS
+        value: "12000"

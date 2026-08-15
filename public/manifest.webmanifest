@@ -1,0 +1,12 @@
+{
+  "id": "/?source=pwa",
+  "name": "cleanup",
+  "short_name": "cleanup",
+  "description": "AI-assisted waste identification and disposal action planning.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fffdf8",
+  "theme_color": "#11362f",
+  "icons": [{"src":"/icon.svg?v=0.14.0","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

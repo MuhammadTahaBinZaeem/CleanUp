@@ -1,0 +1,13 @@
+{
+  "name": "cleanup",
+  "version": "0.14.0",
+  "private": true,
+  "description": "cleanup — AI waste assistant with server-attested matched drop-off records",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "check": "node --check server.js && node --check public/app.js && node --test"
+  },
+  "engines": {"node": ">=20 <25"}
+}

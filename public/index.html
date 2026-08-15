@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#11362f" />
+  <meta name="description" content="cleanup turns a waste photo into safer disposal guidance, nearby recycling options, and a simple action record." />
+  <link rel="manifest" href="/manifest.webmanifest?v=0.14.0" />
+  <link rel="stylesheet" href="/styles.css?v=0.14.0" />
+  <title>cleanup — AI Waste Assistant</title>
+</head>
+<body>
+  <a class="skip-link" href="#scan">Skip to main content</a>
+  <header class="topbar">
+    <a class="brand" href="#scan" aria-label="cleanup home"><span class="brand-mark">C</span><span>cleanup</span></a>
+    <nav aria-label="Main navigation">
+      <a href="#scan">Scan</a><a href="#nearby">Nearby</a><a href="#pickup">Action</a><a href="#impact">Impact</a>
+    </nav>
+    <span id="aiStatus" class="status-pill" role="status">Checking AI…</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">SEE → UNDERSTAND → ACT</p>
+        <h1>Know what to do with <em>anything</em> you’re about to throw away.</h1>
+        <p class="hero-copy">Take a photo. cleanup identifies the item, flags risky waste, explains the next step, and helps you find a nearby place that may accept it.</p>
+        <a class="primary-btn" href="#scan">Analyze waste</a>
+      </div>
+      <div class="hero-card" aria-label="Example result">
+        <span class="mini-label">EXAMPLE</span>
+        <div class="example-object">🔋</div>
+        <strong>AA battery</strong>
+        <span class="danger-tag">Special disposal</span>
+        <p>Keep it out of normal recycling. Look for a battery or e-waste collection point and confirm acceptance before travelling.</p>
+      </div>
+    </section>
+
+    <section id="scan" class="section">
+      <div class="section-head">
+        <div><p class="eyebrow">01 · SCAN</p><h2>Show cleanup the waste.</h2></div>
+        <p>Use your phone camera or upload an image. Large photos are resized in your browser before upload, and the Gemini API key stays on the server.</p>
+      </div>
+      <div class="scan-grid">
+        <div class="upload-panel">
+          <label class="drop-zone" for="wasteImage">
+            <input id="wasteImage" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" />
+            <img id="preview" alt="Selected waste preview" hidden />
+            <div id="uploadPrompt"><span class="camera-icon">◎</span><strong>Take, choose, or drop a photo</strong><small>JPEG, PNG, WEBP, HEIC/HEIF</small></div>
+            <span id="changePhotoHint" class="change-photo-hint" hidden>Change photo</span>
+          </label>
+          <div class="button-row">
+            <button id="analyzeBtn" class="primary-btn" type="button" disabled>Analyze photo</button>
+            <button id="demoBtn" class="secondary-btn" type="button">Use demo result</button>
+          </div>
+          <p id="scanMessage" class="muted" aria-live="polite"></p>
+        </div>
+        <div id="resultsPanel" class="results-panel empty-state" aria-busy="false">
+          <div><span class="big-icon">↗</span><h3>Your action plan appears here</h3><p>cleanup turns recognition into a disposal decision instead of showing raw AI probabilities.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="nearby" class="section alt-section">
+      <div class="section-head">
+        <div><p class="eyebrow">02 · FIND</p><h2>Find somewhere that may take it.</h2></div>
+        <p>Choose an analyzed item first. cleanup ranks OpenStreetMap recycling points using any published material tags; a match is still not a guarantee of acceptance.</p>
+      </div>
+
+      <div id="activeItemBar" class="active-item-bar" hidden>
+        <strong>Finding options for:</strong><span id="activeItemName"></span>
+      </div>
+
+      <div class="location-controls">
+        <button id="locationBtn" class="primary-btn" type="button">Use my location</button>
+        <span class="or-label">or</span>
+        <label class="address-field"><span class="sr-only">Address or city</span><input id="addressInput" autocomplete="street-address" placeholder="Enter city, area, or address" /></label>
+        <button id="addressBtn" class="secondary-btn" type="button">Search address</button>
+      </div>
+      <p id="locationMessage" class="muted" aria-live="polite"></p>
+      <div id="addressResults" class="address-results" hidden aria-live="polite"></div>
+      <p class="privacy-note">Address searches are sent to OpenStreetMap Nominatim. Prefer a city or area when possible and avoid confidential details.</p>
+
+      <div class="map-layout">
+        <div id="map" class="map"><div class="map-placeholder">Choose an item, then use your location or search an address.</div></div>
+        <div id="facilityList" class="facility-list" aria-busy="false"><p class="muted">No facility search yet.</p></div>
+      </div>
+    </section>
+
+    <section id="pickup" class="section">
+      <div class="section-head">
+        <div><p class="eyebrow">03 · ACT</p><h2>Record the next action.</h2></div>
+        <p>The current MVP does not dispatch a real collector. A live published material match can receive a server-signed pre-action plan; after the scheduled time, completion can be server-attested. Physical handoff remains self-reported.</p>
+      </div>
+      <form id="pickupForm" class="pickup-form">
+        <label>Action
+          <select id="pickupAction" name="action" required>
+            <option value="dropoff">Plan drop-off</option>
+            <option value="pickup">Demo pickup</option>
+          </select>
+        </label>
+        <label>Material<input id="pickupMaterial" name="material" required readonly placeholder="Choose an analyzed item" /></label>
+        <label>Facility / destination<input id="pickupFacility" name="facility" readonly placeholder="Choose a facility for a drop-off" /></label>
+        <label>Estimated weight (kg)<input id="pickupWeight" name="weight" type="number" min="0.1" max="10000" step="0.1" required placeholder="1.0" /></label>
+        <label>Date<input id="pickupDate" name="date" type="date" required /></label>
+        <label>Time<input id="pickupTime" name="time" type="time" required /></label>
+        <label class="wide">Note<textarea id="pickupNote" name="note" rows="3" maxlength="300" placeholder="Optional instructions or reminder"></textarea></label>
+        <div class="form-actions">
+          <button class="primary-btn" type="submit">Save action</button>
+          <span id="pickupMessage" class="muted" aria-live="polite"></span>
+        </div>
+      </form>
+      <div id="pickupHistory" class="history-list" aria-live="polite"></div>
+    </section>
+
+    <section id="impact" class="section impact-section">
+      <div class="section-head">
+        <div><p class="eyebrow">04 · IMPACT</p><h2>Count server-attested matched completions.</h2></div>
+        <p>Impact uses server-revalidated signed completion receipts. The receipt proves cleanup signed the matched plan and acknowledged completion after schedule; it does not prove a recycler physically received the waste.</p>
+      </div>
+      <div class="metrics">
+        <div class="metric"><strong id="metricScans">0</strong><span>real items analyzed</span></div>
+        <div class="metric"><strong id="metricPickups">0</strong><span>server-attested drop-offs</span></div>
+        <div class="metric"><strong id="metricKg">0.0</strong><span>kg in attested records</span></div>
+      </div>
+      <p id="impactProofNote" class="impact-note" aria-live="polite">Physical handoff remains self-reported until a recycler-side verifier is connected.</p>
+      <button id="clearDataBtn" class="ghost-on-dark" type="button">Clear local history</button>
+    </section>
+  </main>
+
+  <footer><strong>cleanup</strong><span>AI guidance is informational. Local disposal rules and facility acceptance vary; hazardous items require extra care.</span></footer>
+
+  <script type="module" src="/app.js?v=0.14.0"></script>
+</body>
+</html>
