@@ -4,15 +4,15 @@
 
 **photo → understand item → safety decision → matched nearby destination → planned drop-off → completion → impact**
 
-It is a mobile-first PWA with a small Node.js backend. Gemini is used for visual understanding, while safety rules, facility matching, action proofs, limits and impact calculations stay deterministic on the server/client workflow.
+It is a mobile-first PWA with a small Node.js backend. Featherless is used for visual understanding, while safety rules, facility matching, action proofs, limits and impact calculations stay deterministic on the server/client workflow.
 
 ## What works
 
 - Photo/camera upload and drag-and-drop.
 - Browser-side resizing for large phone photos.
-- Gemini multimodal structured analysis with multiple detected items.
-- Up to **3 Gemini API keys** with rotation/failover.
-- Up to **3 configurable Gemini model names** with model fallback.
+- Featherless multimodal structured analysis with multiple detected items.
+- One server-side **Featherless API key**.
+- Automatic internal routing across multiple vision-capable Featherless models.
 - Actual model-used reporting without exposing API keys.
 - Deterministic handling overrides for batteries, e-waste, medical, chemical and other hazardous waste.
 - Qualitative AI certainty instead of fake calibrated percentages.
@@ -45,23 +45,15 @@ This makes browser-local edits tamper-evident and prevents fake local history fr
 
 A completed action with no valid pre-action plan is intentionally **not retroactively attestable**. If an old/invalid plan can never produce a completion proof, the UI shows `Attestation unavailable` rather than a retry button that cannot succeed.
 
-## Gemini keys and model failover
+## Featherless API and automatic model routing
 
-All Gemini credentials stay on the server. Configure one to three keys and one to three models:
+All Featherless credentials stay on the server. You configure **one key only**:
 
 ```env
-GEMINI_API_KEY_1=your_first_key
-GEMINI_API_KEY_2=your_second_key
-GEMINI_API_KEY_3=your_third_key
-
-GEMINI_MODEL_1=gemini-3.6-flash
-GEMINI_MODEL_2=gemini-3.5-flash
-GEMINI_MODEL_3=gemini-3.5-flash-lite
+FEATHERLESS_API_KEY=your_key_here
 ```
 
-Only one key is required. `GEMINI_API_KEY` and `GEMINI_MODEL` are accepted as legacy slot-1 aliases.
-
-cleanup can rotate keys for invalid/auth/permission/quota/retryable failures, keep model-access failures scoped to the affected key/model pair, fall back to the next model for actual model-unavailable failures, cool down unhealthy routes, and remember healthy routes. Key values never appear in browser responses or health metadata.
+There is no model setting in the app or Render configuration. cleanup automatically routes each scan through an internal pool of vision-capable Featherless models and falls back when a route is cold, unavailable, inaccessible, rate-limited, or temporarily failing. The UI simply reports that automatic routing is ready; you never choose a model.
 
 ## Local setup
 
@@ -80,7 +72,7 @@ Open:
 http://localhost:3000
 ```
 
-Without a Gemini key, the demo workflow still works. If the backend becomes temporarily unavailable after the page has loaded, cleanup can fall back to fixed local demo data.
+Without a Featherless key, the demo workflow still works. If the backend becomes temporarily unavailable after the page has loaded, cleanup can fall back to fixed local demo data.
 
 ## Location services
 
@@ -107,8 +99,8 @@ Address lookup happens only after an explicit Search/Enter action; there is no N
 - start: `npm start`
 - health check: `/healthz`
 - automatic deploys from `main`
-- three optional Gemini key slots
-- three configurable model slots
+- one Featherless API key slot
+- automatic internal vision-model routing
 - generated `ACTION_RECEIPT_SECRET`
 - bounded AI/location limits and timeouts
 
@@ -142,7 +134,7 @@ GET /healthz
 GET /api/health
 ```
 
-`/api/health` exposes safe configuration metadata such as configured/usable route counts and model priority, never secret API-key values.
+`/api/health` exposes safe configuration metadata such as configured/usable route counts, never secret API-key values.
 
 ## Project history
 

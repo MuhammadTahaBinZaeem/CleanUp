@@ -14,14 +14,14 @@ https://github.com/MuhammadTahaBinZaeem/CleanUp
 
 The Blueprint creates a Node web service named `cleanup` in the Singapore region, runs the full check suite during build, starts with `npm start`, uses `/healthz`, and enables automatic deploys from commits.
 
-## 2. Add Gemini secrets
+## 2. Add Featherless secrets
 
 Render will ask for these because they are `sync: false`:
 
 ```text
-GEMINI_API_KEY_1
-GEMINI_API_KEY_2
-GEMINI_API_KEY_3
+FEATHERLESS_API_KEY
+FEATHERLESS_API_KEY
+FEATHERLESS_API_KEY
 ```
 
 Only key 1 is required. Keys 2 and 3 are optional failover slots.
@@ -29,9 +29,6 @@ Only key 1 is required. Keys 2 and 3 are optional failover slots.
 Model defaults are non-secret:
 
 ```text
-GEMINI_MODEL_1=gemini-3.6-flash
-GEMINI_MODEL_2=gemini-3.5-flash
-GEMINI_MODEL_3=gemini-3.5-flash-lite
 ```
 
 You can change model names in Render without changing code.
@@ -64,16 +61,16 @@ cleanup serializes/throttles public Nominatim work, caches geocoder results and 
 
 Browser location/address lookups use POST JSON to cleanup, so the user's query/coordinates are not placed in cleanup's own public request URL. The external location provider still receives the location because it is required for the requested search.
 
-## 5. Gemini reliability settings
+## 5. Featherless reliability settings
 
 The default Blueprint also sets bounded failover values, including:
 
 ```text
-GEMINI_ATTEMPT_TIMEOUT_MS=15000
-GEMINI_TOTAL_TIMEOUT_MS=45000
-GEMINI_QUOTA_COOLDOWN_MS=60000
-GEMINI_MODEL_ACCESS_COOLDOWN_MS=900000
-GEMINI_RESPONSE_MAX_BYTES=2097152
+FEATHERLESS_ATTEMPT_TIMEOUT_MS=15000
+FEATHERLESS_TOTAL_TIMEOUT_MS=45000
+FEATHERLESS_QUOTA_COOLDOWN_MS=60000
+FEATHERLESS_ACCESS_COOLDOWN_MS=900000
+FEATHERLESS_RESPONSE_MAX_BYTES=2097152
 ```
 
 The browser wait budget is longer than the server's bounded failover budget so the UI does not normally abandon a request while the server is still rotating routes.
@@ -89,7 +86,7 @@ https://YOUR-SERVICE.onrender.com/healthz
 Expected shape for this release:
 
 ```json
-{"ok":true,"service":"cleanup","version":"0.14.9"}
+{"ok":true,"service":"cleanup","version":"1.0.0"}
 ```
 
 Then open:
@@ -98,13 +95,13 @@ Then open:
 https://YOUR-SERVICE.onrender.com/api/health
 ```
 
-Confirm Gemini is configured if you entered a key. This endpoint must never contain the actual key values.
+Confirm Featherless is configured if you entered a key. This endpoint must never contain the actual key values.
 
 ## 7. Browser smoke test
 
 1. Load the built-in demo.
 2. Select the battery and confirm a non-matching/unknown destination cannot be selected as a valid special-handling destination.
-3. Upload a real image and confirm cleanup shows the actual Gemini model that answered.
+3. Upload a real image and confirm cleanup shows the actual Featherless model that answered.
 4. Search a city/area; if several geocoding results appear, choose one explicitly.
 5. Pick a live material-matched facility and save a scheduled drop-off.
 6. Confirm a future action shows `Scheduled` rather than an active completion button.
