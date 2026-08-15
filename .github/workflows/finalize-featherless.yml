@@ -1,0 +1,35 @@
+name: Finalize Featherless migration
+
+on:
+  push:
+    branches: [finalize-release]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Apply provider migration
+        run: python3 tools/migrate-featherless.py
+      - name: Verify
+        run: |
+          npm ci
+          npm run check
+      - name: Commit verified migration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server.js public/app.js public/index.html public/sw.js public/manifest.webmanifest tests/server.test.js package.json package-lock.json render.yaml .env.example RENDER_DEPLOY.md CHANGELOG.md README.md docs/PROJECT_HISTORY.md
+          if git diff --cached --quiet; then
+            echo 'No permanent changes to commit.'
+          else
+            git commit -m 'Migrate cleanup to Featherless v1.0.0'
+            git push origin HEAD:finalize-release
+          fi
