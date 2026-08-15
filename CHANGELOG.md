@@ -2,6 +2,14 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 0.14.8 — Shared lookup de-duplication
+
+- Simultaneous identical geocode and facility cache misses now share one upstream request instead of queuing duplicate Nominatim/Overpass calls.
+- Each browser request waits on the shared lookup with its own abort signal, so a disconnected tab can stop waiting without cancelling the upstream work for other users.
+- Shared upstream lookups still retain their own service timeout and server-shutdown cancellation behavior.
+- Failed lookups are removed from the in-flight map and are never cached as successful results.
+- PWA/server cache identity bumped to 0.14.8.
+
 ## 0.14.7 — Cross-tab action-creation serialization
 
 - The full action-create flow now holds a fingerprint-specific Web Lock across duplicate recheck, optional server plan-proof request, and local insertion where browser locks are available.

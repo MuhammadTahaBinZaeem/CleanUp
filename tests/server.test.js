@@ -47,7 +47,8 @@ import {
   verifyCompletionReceipts,
   clientKey,
   geocodeCacheKey,
-  facilitySearchInputs
+  facilitySearchInputs,
+  cachedLookup
 } from '../server.js';
 
 let baseUrl;
@@ -566,9 +567,9 @@ test('PWA cache and frontend script version stay synchronized', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
-  assert.match(html, /app\.js\?v=0\.14\.7/);
-  assert.match(sw, /cleanup-v0\.14\.7/);
-  assert.match(sw, /app\.js\?v=0\.14\.7/);
+  assert.match(html, /app\.js\?v=0\.14\.8/);
+  assert.match(sw, /cleanup-v0\.14\.8/);
+  assert.match(sw, /app\.js\?v=0\.14\.8/);
 });
 
 test('new analysis attempts clear stale results before network work begins', async () => {
@@ -734,7 +735,7 @@ test('server serializes and caches Nominatim instead of issuing unrestricted pub
   const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
   assert.match(source, /createSerialGate\(\{ minIntervalMs: NOMINATIM_MIN_INTERVAL_MS \}\)/);
   assert.match(source, /GEOCODE_CACHE_MS/);
-  assert.match(source, /cachedLookup\(key, \(\) => geocodeAddress\(q,[\s\S]*GEOCODE_CACHE_MS\)/);
+  assert.match(source, /cachedLookup\(key, \(\) => geocodeAddress\(q\), GEOCODE_CACHE_MS, \{ signal: connection\.signal \}\)/);
   assert.match(source, /NOMINATIM_BASE_URL/);
 });
 
@@ -1017,7 +1018,7 @@ test('service worker never caches API routes and respects no-store', async () =>
   const sw = await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /no-store/);
-  assert.match(sw, /cleanup-v0\.14\.7/);
+  assert.match(sw, /cleanup-v0\.14\.8/);
 });
 
 test('Render Blueprint generates receipt secret and wires global AI budget', async () => {
@@ -1176,16 +1177,16 @@ test('mobile CSS includes safe-area bottom padding and does not ellipsize AI sta
   assert.match(css,/\.status-pill \{ max-width:none; white-space:normal; overflow:visible; text-overflow:clip/);
 });
 
-test('manifest and shell asset versions are synchronized to 0.14.7', async () => {
+test('manifest and shell asset versions are synchronized to 0.14.8', async () => {
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const html=await fs.readFile(path.join(root,'public','index.html'),'utf8');
   const sw=await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   const manifest=JSON.parse(await fs.readFile(path.join(root,'public','manifest.webmanifest'),'utf8'));
-  assert.match(html,/styles\.css\?v=0\.14\.7/);
-  assert.match(html,/manifest\.webmanifest\?v=0\.14\.7/);
-  assert.match(sw,/styles\.css\?v=0\.14\.7/);
+  assert.match(html,/styles\.css\?v=0\.14\.8/);
+  assert.match(html,/manifest\.webmanifest\?v=0\.14\.8/);
+  assert.match(sw,/styles\.css\?v=0\.14\.8/);
   assert.equal(manifest.id,'/?source=pwa');
-  assert.match(manifest.icons[0].src,/v=0\.14\.7/);
+  assert.match(manifest.icons[0].src,/v=0\.14\.8/);
 });
 
 test('battery routing requires explicit battery acceptance rather than generic electronics', () => {
@@ -1347,7 +1348,7 @@ test('repository baseline includes complete cleanup history documents without ra
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const changelog=await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8');
   const history=await fs.readFile(path.join(root,'docs','PROJECT_HISTORY.md'),'utf8');
-  assert.match(changelog,/0\.14\.7/);
+  assert.match(changelog,/0\.14\.8/);
   assert.match(history,/changed combined `cleanup` implementation/);
   assert.match(history,/does not contain the raw Android\/web reference repositories/);
 });
@@ -1641,4 +1642,49 @@ test('action creation stamps createdAt after a potentially slow proof request', 
   const stampIndex = block.indexOf('record.createdAt=new Date().toISOString()');
   const writeIndex = block.indexOf('mutateStoredArray(STORAGE_ACTIONS');
   assert.ok(proofIndex >= 0 && stampIndex > proofIndex && writeIndex > stampIndex);
+});
+
+
+test('cachedLookup coalesces simultaneous identical misses into one upstream loader', async () => {
+  const key = `coalesce-${Date.now()}-${Math.random()}`;
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const loader = async () => { calls += 1; await gate; return [{ value: 1 }]; };
+  const first = cachedLookup(key, loader, 5000);
+  const second = cachedLookup(key, loader, 5000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.deepEqual(a, [{ value: 1 }]);
+  assert.deepEqual(b, [{ value: 1 }]);
+  assert.equal(calls, 1);
+});
+
+test('aborting one cachedLookup waiter does not cancel the shared lookup for other waiters', async () => {
+  const key = `abort-waiter-${Date.now()}-${Math.random()}`;
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const loader = async () => { calls += 1; await gate; return ['shared']; };
+  const controller = new AbortController();
+  const cancelled = cachedLookup(key, loader, 5000, { signal: controller.signal });
+  const survivor = cachedLookup(key, loader, 5000);
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+  await assert.rejects(cancelled, (error) => error?.code === 'REQUEST_CANCELLED');
+  assert.equal(calls, 1);
+  release();
+  assert.deepEqual(await survivor, ['shared']);
+  assert.equal(calls, 1);
+});
+
+test('facility and geocode routes pass caller cancellation only to the shared-lookup waiter', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
+  assert.match(source, /cachedLookup\(roundedKey, \(\) => overpassFacilities\(lat, lon, 12000\), LOOKUP_CACHE_MS, \{ signal: connection\.signal \}\)/);
+  assert.match(source, /cachedLookup\(key, \(\) => geocodeAddress\(q\), GEOCODE_CACHE_MS, \{ signal: connection\.signal \}\)/);
+  assert.doesNotMatch(source, /overpassFacilities\(lat, lon, 12000, \{ signal: connection\.signal \}\)/);
+  assert.doesNotMatch(source, /geocodeAddress\(q, \{ signal: connection\.signal \}\)/);
 });

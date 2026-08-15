@@ -89,7 +89,7 @@ https://YOUR-SERVICE.onrender.com/healthz
 Expected shape for this release:
 
 ```json
-{"ok":true,"service":"cleanup","version":"0.14.7"}
+{"ok":true,"service":"cleanup","version":"0.14.8"}
 ```
 
 Then open:

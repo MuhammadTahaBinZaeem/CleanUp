@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PUBLIC_REAL_DIR = await fs.realpath(PUBLIC_DIR).catch(() => PUBLIC_DIR);
-const VERSION = '0.14.7';
+const VERSION = '0.14.8';
 
 async function loadDotEnv() {
   try {
@@ -144,6 +144,7 @@ const lookupLimiter = createRateLimiter({
 });
 const actionLimiter = createRateLimiter({ limit: ACTION_RATE_LIMIT_MAX, windowMs: ACTION_RATE_LIMIT_WINDOW_MS });
 const lookupCache = new Map();
+const lookupInflight = new Map();
 
 function createSerialGate({ minIntervalMs = 0, maxQueue = OUTBOUND_QUEUE_MAX } = {}) {
   const queue = [];
@@ -978,12 +979,41 @@ function cacheLookup(key, value, ttlMs = LOOKUP_CACHE_MS) {
   lookupCache.set(key, { value, expiresAt: Date.now() + ttlMs });
   while (lookupCache.size > 250) lookupCache.delete(lookupCache.keys().next().value);
 }
-async function cachedLookup(key, loader, ttlMs = LOOKUP_CACHE_MS) {
+function cancelledLookupError() {
+  const error = new Error('Lookup request was cancelled');
+  error.code = 'REQUEST_CANCELLED';
+  error.status = 499;
+  return error;
+}
+function waitForSharedLookup(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(cancelledLookupError());
+  return new Promise((resolve, reject) => {
+    const aborted = () => { cleanup(); reject(cancelledLookupError()); };
+    const cleanup = () => signal.removeEventListener('abort', aborted);
+    signal.addEventListener('abort', aborted, { once: true });
+    promise.then(
+      (value) => { cleanup(); resolve(value); },
+      (error) => { cleanup(); reject(error); }
+    );
+  });
+}
+async function cachedLookup(key, loader, ttlMs = LOOKUP_CACHE_MS, { signal } = {}) {
   const cached = lookupCached(key);
   if (cached !== null) return cached;
-  const value = await loader();
-  cacheLookup(key, value, ttlMs);
-  return value;
+  let shared = lookupInflight.get(key);
+  if (!shared) {
+    shared = (async () => {
+      const value = await loader();
+      cacheLookup(key, value, ttlMs);
+      return value;
+    })();
+    lookupInflight.set(key, shared);
+    shared.finally(() => {
+      if (lookupInflight.get(key) === shared) lookupInflight.delete(key);
+    }).catch(() => {});
+  }
+  return waitForSharedLookup(shared, signal);
 }
 
 function normalizeFacility(facility, searchLat, searchLon) {
@@ -1331,7 +1361,7 @@ const server = http.createServer(async (req, res) => {
         const roundedKey = `fac:${lat.toFixed(3)}:${lon.toFixed(3)}`;
         let rawFacilities; let demo = false; let warning = '';
         try {
-          rawFacilities = await cachedLookup(roundedKey, () => overpassFacilities(lat, lon, 12000, { signal: connection.signal }));
+          rawFacilities = await cachedLookup(roundedKey, () => overpassFacilities(lat, lon, 12000), LOOKUP_CACHE_MS, { signal: connection.signal });
           if (!rawFacilities.length) throw new Error('No live recycling points returned');
         } catch (error) {
           if (connection.signal.aborted) throw Object.assign(new Error('Request cancelled'), { code:'REQUEST_CANCELLED', status:499 });
@@ -1361,7 +1391,7 @@ const server = http.createServer(async (req, res) => {
         const q = sanitizeLookupText(raw.query ?? raw.q, 200);
         if (q.length < 3) return json(res, 400, { ok:false, code:'BAD_QUERY', error:'Enter at least 3 characters of an address' });
         const key = geocodeCacheKey(q);
-        const places = await cachedLookup(key, () => geocodeAddress(q, { signal: connection.signal }), GEOCODE_CACHE_MS);
+        const places = await cachedLookup(key, () => geocodeAddress(q), GEOCODE_CACHE_MS, { signal: connection.signal });
         return json(res, 200, { ok:true, places, results:places.map((place) => ({ label:place.display_name, lat:place.lat, lon:place.lon })) });
       } catch (error) {
         if (res.destroyed || error.code === 'REQUEST_CANCELLED') return;
@@ -1431,7 +1461,7 @@ export {
   orderedKeySlots, analyzeWithGemini, geminiExhaustionFailure, materialPhrasesMatch, strictBoolean, deterministicSafetySteps,
   deterministicSafetyExplanation, deterministicFacilityTags, createSerialGate, validCoordinates, demoFacilities,
   finiteNumber, browserApiRequestAllowed, validateAnalysisImageInput, rankFacilities, normalizeFacility,
-  clientKey, geocodeCacheKey, facilitySearchInputs,
+  clientKey, geocodeCacheKey, facilitySearchInputs, cachedLookup,
   encodeSignedPayload, decodeSignedPayload, attestedFacilityTagsForItem, createAnalysisItemProof, attestAnalysisItems,
   validSignedItemPayload, createFacilityProof, validSignedFacilityProofPayload, deterministicPlanId,
   prepareActionReceipt, completeActionReceipt, validSignedPlanPayload, validSignedCompletionPayload,
