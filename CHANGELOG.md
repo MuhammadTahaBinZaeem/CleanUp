@@ -2,6 +2,14 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 0.14.9 — Clear-history generation fencing
+
+- Clearing local history now advances a cross-tab generation marker while scan and action stores are locked.
+- Photo/demo analyses capture that generation before network work and still show their result if a clear happens mid-request, but they no longer recreate scan history afterward.
+- New-action creation checks the same generation before and after any slow plan-proof request and again inside the final locked write, so an operation that began before a clear cannot repopulate action history.
+- The clear UI reports if the tiny cross-tab generation marker itself could not be persisted.
+- PWA/server cache identity bumped to 0.14.9.
+
 ## 0.14.8 — Shared lookup de-duplication
 
 - Simultaneous identical geocode and facility cache misses now share one upstream request instead of queuing duplicate Nominatim/Overpass calls.

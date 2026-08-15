@@ -1,8 +1,9 @@
 const $ = (id) => document.getElementById(id);
 
-const APP_VERSION = '0.14.8';
+const APP_VERSION = '0.14.9';
 const STORAGE_SCANS = 'cleanup_scans';
 const STORAGE_ACTIONS = 'cleanup_actions';
+const STORAGE_HISTORY_GENERATION = 'cleanup_history_generation';
 const MAX_SELECTED_FILE_BYTES = 30 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const MAX_STORAGE_CHARS = 1_500_000;
@@ -112,6 +113,18 @@ function escapeHtml(value) {
 function uid() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+function historyGenerationToken() {
+  try { return localStorage.getItem(STORAGE_HISTORY_GENERATION) || ''; }
+  catch { return ''; }
+}
+function historyGenerationUnchanged(expected) {
+  return historyGenerationToken() === expected;
+}
+function bumpHistoryGeneration() {
+  const token = uid();
+  try { localStorage.setItem(STORAGE_HISTORY_GENERATION, token); return true; }
+  catch { return false; }
 }
 
 function prefersReducedMotion() {
@@ -471,6 +484,7 @@ async function compressImage(file) {
 
 $('analyzeBtn').addEventListener('click', async () => {
   if (!state.selectedFile) return;
+  const historyGeneration = historyGenerationToken();
   const generation = ++state.analyzeGeneration;
   state.analyzeController?.abort();
   const controller = new AbortController();
@@ -493,7 +507,7 @@ $('analyzeBtn').addEventListener('click', async () => {
       signal: controller.signal
     }, 65000);
     if (generation !== state.analyzeGeneration) return;
-    const applied = await setAnalysis(payload.result, false);
+    const applied = await setAnalysis(payload.result, false, historyGeneration);
     if (applied && !$('scanMessage').textContent.includes('could not save')) $('scanMessage').textContent = `Analyzed with ${state.analysis.ai_model || 'Gemini'}. Choose an item to find disposal options.`;
   } catch (error) {
     if (generation !== state.analyzeGeneration || error.code === 'REQUEST_CANCELLED') return;
@@ -509,6 +523,7 @@ $('analyzeBtn').addEventListener('click', async () => {
 });
 
 $('demoBtn').addEventListener('click', async () => {
+  const historyGeneration = historyGenerationToken();
   const generation = ++state.analyzeGeneration;
   state.analyzeController?.abort();
   state.analyzeController = null;
@@ -519,11 +534,11 @@ $('demoBtn').addEventListener('click', async () => {
   try {
     const payload = await fetchJson('/api/demo-analysis', { method: 'POST' }, 8000);
     if (generation !== state.analyzeGeneration) return;
-    const applied = await setAnalysis(payload.result, true);
+    const applied = await setAnalysis(payload.result, true, historyGeneration);
     if (applied && !$('scanMessage').textContent.includes('could not save')) $('scanMessage').textContent = 'Demo result loaded. Demo scans do not count toward impact.';
   } catch (error) {
     if (generation !== state.analyzeGeneration) return;
-    const applied = await setAnalysis(typeof structuredClone === 'function' ? structuredClone(LOCAL_DEMO_RESULT) : JSON.parse(JSON.stringify(LOCAL_DEMO_RESULT)), true);
+    const applied = await setAnalysis(typeof structuredClone === 'function' ? structuredClone(LOCAL_DEMO_RESULT) : JSON.parse(JSON.stringify(LOCAL_DEMO_RESULT)), true, historyGeneration);
     if (applied && !$('scanMessage').textContent.includes('could not save')) $('scanMessage').textContent = 'Local demo loaded because the server is unavailable. Demo data does not count toward impact.';
   } finally {
     if (generation === state.analyzeGeneration) {
@@ -557,7 +572,7 @@ function normalizeAnalysisPayload(result) {
   return { scene_summary:typeof result.scene_summary==='string'?result.scene_summary.slice(0,500):'Waste analysis', user_warning:typeof result.user_warning==='string'?result.user_warning.slice(0,500):'', ai_model:typeof result.ai_model==='string'?result.ai_model.slice(0,160):'Gemini', items };
 }
 
-async function setAnalysis(result, demo) {
+async function setAnalysis(result, demo, expectedHistoryGeneration = historyGenerationToken()) {
   setBusy('resultsPanel', false);
   const normalized = normalizeAnalysisPayload(result);
   if (!normalized || !normalized.items.length) {
@@ -569,9 +584,16 @@ async function setAnalysis(result, demo) {
   }
   state.analysis = normalized; state.analysisIsDemo = Boolean(demo); state.selectedItemIndex = null; state.facilities=[]; state.selectedFacilityId=null;
   const scan = { id:uid(), at:new Date().toISOString(), demo:Boolean(demo), items:normalized.items.map((item)=>({name:item.name, material:item.material, waste_type:item.waste_type})) };
-  const saved = await mutateStoredArray(STORAGE_SCANS, (scans) => [scan, ...scans].slice(0,50));
+  let skippedAfterClear = false;
+  let wroteHistory = false;
+  const saved = await mutateStoredArray(STORAGE_SCANS, (scans) => {
+    if (!historyGenerationUnchanged(expectedHistoryGeneration)) { skippedAfterClear = true; return scans; }
+    wroteHistory = true;
+    return [scan, ...scans].slice(0,50);
+  });
   renderAnalysis(); selectItem(0,{searchIfPossible:false}); renderImpact();
-  if (!saved) $('scanMessage').textContent = 'Analysis ready, but this browser could not save scan history.';
+  if (skippedAfterClear) $('scanMessage').textContent = 'Analysis ready. History was cleared while this scan was running, so this scan was not saved.';
+  else if (!saved || !wroteHistory) $('scanMessage').textContent = 'Analysis ready, but this browser could not save scan history.';
   return true;
 }
 function routeLabel(item) {
@@ -1072,27 +1094,33 @@ $('pickupForm').addEventListener('submit', async (event) => {
     facilityProof:selectedFacilityHasProof(facility)?facility.facility_proof:'',planReceipt:'',completionReceipt:'',serverAttestedAt:''
   };
   const eligible=!isDemo&&action==='dropoff'&&Boolean(record.facilityProof);
+  const historyGeneration = historyGenerationToken();
   const fingerprint=recordFingerprint(record);
   if (state.actionLocks.has(fingerprint)) return;
   state.actionLocks.add(fingerprint); if (submitButton) submitButton.disabled=true;
   try {
     await withStorageLock(`action-create:${fingerprint}`, async () => {
+      if (!historyGenerationUnchanged(historyGeneration)) { $('pickupMessage').textContent='History was cleared while this action was waiting, so it was not saved. Submit again if you still want to keep it.'; return; }
       const recent=storage.getArray(STORAGE_ACTIONS).some((existing)=>recordFingerprint(existing)===fingerprint&&Date.now()-Date.parse(existing.createdAt||0)<10_000);
       if (recent) { $('pickupMessage').textContent='That same action was just saved already, possibly in another tab.'; renderActions(); return; }
       if (eligible) {
         try { record.planReceipt=await requestPlanProof(record); record.proofState='planned-proof'; }
         catch (error) { record.proofState='plan-missing'; record.proofError=boundedText(error.message,220); }
       } else record.proofState=isDemo?'demo':'not-eligible';
+      if (!historyGenerationUnchanged(historyGeneration)) { $('pickupMessage').textContent='History was cleared while this action was being prepared, so it was not saved.'; return; }
       // Stamp insertion time after any slow proof request so a waiting tab cannot age out of the duplicate window.
       record.createdAt=new Date().toISOString();
       let inserted=false;
+      let skippedAfterClear=false;
       const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{
+        if (!historyGenerationUnchanged(historyGeneration)) { skippedAfterClear=true; return all; }
         const duplicate=all.some((existing)=>recordFingerprint(existing)===fingerprint&&Date.now()-Date.parse(existing.createdAt||0)<10_000);
         if (duplicate) return all;
         inserted=true;
         return [record,...all].slice(0,100);
       });
       if (!saved) { $('pickupMessage').textContent='Could not save this action in browser storage. Check private-mode/storage settings and try again.'; return; }
+      if (skippedAfterClear) { $('pickupMessage').textContent='History was cleared before this action could be saved, so the old operation was discarded.'; renderActions(); return; }
       if (!inserted) { $('pickupMessage').textContent='That same action was just saved already, possibly in another tab.'; renderActions(); return; }
       $('pickupWeight').value=''; $('pickupNote').value='';
       $('pickupMessage').textContent=isDemo?'Saved as a demo action. Demo actions never count toward attested impact.'
@@ -1306,20 +1334,22 @@ async function renderImpact() {
   }
 }
 async function clearStoredHistory() {
-  return withStorageLock(STORAGE_ACTIONS, () => withStorageLock(STORAGE_SCANS, async () => ({
-    scansRemoved: storage.remove(STORAGE_SCANS),
-    actionsRemoved: storage.remove(STORAGE_ACTIONS)
-  })));
+  return withStorageLock(STORAGE_ACTIONS, () => withStorageLock(STORAGE_SCANS, async () => {
+    const scansRemoved = storage.remove(STORAGE_SCANS);
+    const actionsRemoved = storage.remove(STORAGE_ACTIONS);
+    const generationUpdated = bumpHistoryGeneration();
+    return { scansRemoved, actionsRemoved, generationUpdated };
+  }));
 }
 $('clearDataBtn').addEventListener('click', async (event) => {
   if (!window.confirm('Clear all locally stored scans and action history from this browser? This cannot be undone.')) return;
   const button = event.currentTarget;
   if (button) button.disabled = true;
   try {
-    const { scansRemoved, actionsRemoved } = await clearStoredHistory();
+    const { scansRemoved, actionsRemoved, generationUpdated } = await clearStoredHistory();
     state.verifiedReceiptDetails=new Map();
     state.impactVerificationState='idle';
-    $('pickupMessage').textContent = scansRemoved && actionsRemoved ? 'Local history cleared.' : 'Some local history could not be cleared.';
+    $('pickupMessage').textContent = scansRemoved && actionsRemoved && generationUpdated ? 'Local history cleared.' : scansRemoved && actionsRemoved ? 'Local history cleared, but this browser could not create the cross-tab clear marker.' : 'Some local history could not be cleared.';
     await renderImpact();
   } finally {
     if (button) button.disabled = false;
