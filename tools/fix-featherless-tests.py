@@ -40,7 +40,7 @@ test('Featherless failure classification distinguishes key, cold model, access, 
 });
 
 test('key slot ordering starts from the last healthy key and wraps around'"""
-s,c=re.subn(pattern,replacement,s,count=1,flags=re.S)
+s,c=re.subn(pattern,lambda _: replacement,s,count=1,flags=re.S)
 if c!=1: raise RuntimeError(f'provider config block replacement count {c}')
 
 pattern=r"test\('Featherless structured output uses responseFormat schema without deprecated sampling settings'.*?\n\}\);\n\ntest\('Featherless schema permits zero detected waste items instead of forcing hallucination'.*?\n\}\);"
@@ -63,10 +63,9 @@ test('Featherless prompt permits zero detected waste items instead of forcing ha
   assert.match(prompt, /return an empty items array/i);
   assert.match(prompt, /never invent an item/i);
 });"""
-s,c=re.subn(pattern,replacement,s,count=1,flags=re.S)
+s,c=re.subn(pattern,lambda _: replacement,s,count=1,flags=re.S)
 if c!=1: raise RuntimeError(f'request contract block replacement count {c}')
 
-# Render/env expectations: exactly one secret and no user-facing model config.
 s=s.replace(r"/FEATHERLESS_MODEL_1[\s\S]*featherless-3\.6-flash/", r"/FEATHERLESS_API_KEY[\s\S]*sync:\s*false/")
 s=s.replace("  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');", "  assert.doesNotMatch(yaml, /FEATHERLESS_MODEL_[123]|FEATHERLESS_API_KEY_[123]|FEATHERLESS_BASE_URL/);\n  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');")
 s=s.replace("  assert.match(envExample, /FEATHERLESS_API_KEY_2=/);\n  assert.match(envExample, /FEATHERLESS_API_KEY_3=/);", "  assert.match(envExample, /^FEATHERLESS_API_KEY=/m);\n  assert.doesNotMatch(envExample, /FEATHERLESS_API_KEY_[123]|FEATHERLESS_MODEL/);")
@@ -78,8 +77,8 @@ s=s.replace(r'0\.14\.9', r'1\.0\.0')
 s=s.replace('0.14.9', '1.0.0')
 s=s.replace('synchronized to 0.14.9', 'synchronized to 1.0.0')
 
-# Replace old three-secret/configurable-model blueprint test if present after provider-wide rename.
-s=re.sub(r"test\('Render Blueprint exposes all three Featherless secret slots and configurable provider controls'.*?\n\}\);", """test('Render Blueprint exposes one Featherless key and keeps model routing internal', async () => {
+pattern=r"test\('Render Blueprint exposes all three Featherless secret slots and configurable provider controls'.*?\n\}\);"
+replacement="""test('Render Blueprint exposes one Featherless key and keeps model routing internal', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
   assert.match(yaml, /- key: FEATHERLESS_API_KEY\\n\\s+sync: false/);
@@ -89,7 +88,8 @@ s=re.sub(r"test\('Render Blueprint exposes all three Featherless secret slots an
   assert.match(backend, /Qwen\/Qwen3\\.6-35B-A3B/);
   assert.match(backend, /Qwen\/Qwen3\\.6-27B/);
   assert.match(backend, /google\/gemma-4-31B-it/);
-});""", s, count=1, flags=re.S)
+});"""
+s,_=re.subn(pattern,lambda _: replacement,s,count=1,flags=re.S)
 
 insert="""
 
