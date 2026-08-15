@@ -17,7 +17,9 @@ jobs:
         with:
           node-version: 24
       - name: Apply provider migration
-        run: python3 tools/migrate-featherless.py
+        run: |
+          python3 tools/migrate-featherless.py
+          python3 tools/fix-featherless-tests.py
       - name: Verify
         run: |
           npm ci
