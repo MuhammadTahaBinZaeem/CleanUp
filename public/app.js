@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const APP_VERSION = '0.14.2';
+const APP_VERSION = '0.14.3';
 const STORAGE_SCANS = 'cleanup_scans';
 const STORAGE_ACTIONS = 'cleanup_actions';
 const MAX_SELECTED_FILE_BYTES = 30 * 1024 * 1024;
@@ -33,7 +33,8 @@ const state = {
   healthRetryTimer: null,
   healthRetryAttempt: 0,
   healthGeneration: 0,
-  healthController: null
+  healthController: null,
+  actionReceiptPersistent: null
 };
 
 const LOCAL_DEMO_RESULT = {
@@ -189,6 +190,9 @@ async function health() {
   try {
     const data = await fetchJson('/api/health', { signal: controller.signal }, 8000);
     if (generation !== state.healthGeneration) return;
+    const previousReceiptPersistence = state.actionReceiptPersistent;
+    state.actionReceiptPersistent = data?.actionReceiptPersistent === true;
+    if (previousReceiptPersistence !== state.actionReceiptPersistent) renderImpact();
     const configured = data?.geminiConfigured === true;
     const usable = Number.isInteger(data?.usableKeyCount) && data.usableKeyCount >= 0 ? data.usableKeyCount : 0;
     const usableModels = Array.isArray(data?.usableModels) ? data.usableModels.filter((m) => typeof m === 'string') : [];
@@ -1022,7 +1026,13 @@ function selectedFacilityHasProof(facility) { return typeof facility?.facility_p
 
 async function requestPlanProof(record) {
   if (!record?.facilityProof || !strictStoredWeight(record.weight) || !canonicalIso(record.plannedAtIso)) throw new Error('No eligible matched facility proof is available. Search again before the scheduled action.');
+  if (state.actionReceiptPersistent === false) throw new Error('Persistent server proofs are not configured on this deployment. Set ACTION_RECEIPT_SECRET to 32+ random characters before relying on attested history.');
   const payload=await fetchJson('/api/action/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({facilityProof:record.facilityProof,weight:record.weight,plannedAt:record.plannedAtIso})},15000);
+  if (payload.persistent !== true) {
+    state.actionReceiptPersistent = false;
+    throw new Error('This server is using a temporary proof secret, so its receipts would break after restart. Configure ACTION_RECEIPT_SECRET before relying on attested history.');
+  }
+  state.actionReceiptPersistent = true;
   if (typeof payload.planReceipt!=='string'||payload.planReceipt.length<20) throw new Error('Server returned no valid plan proof.');
   return payload.planReceipt;
 }
@@ -1085,6 +1095,7 @@ function proofDetailsMatchRecord(record, details) {
 function proofBadge(record) {
   if (record?.validRecord === false) return '<span class="danger-tag">Invalid local record</span>';
   if (record?.isDemo===true) return '<span class="demo-badge">DEMO</span>';
+  if (state.actionReceiptPersistent === false && (record?.planReceipt || record?.completionReceipt)) return '<span class="danger-tag">Proof secret not persistent</span>';
   if (record?.status!=='completed') return record?.planReceipt?'<span class="neutral-tag">Plan proof stored</span>':'';
   if (!record?.planReceipt) return '<span class="neutral-tag">No pre-action proof</span>';
   if (!record?.completionReceipt) return '<span class="neutral-tag">Completion not attested</span>';
@@ -1154,7 +1165,13 @@ async function retryPlanProof(marker) {
 }
 async function obtainCompletionReceipt(snapshot) {
   if (!snapshot?.planReceipt) throw new Error('No pre-action proof exists for this action. Physical completion can be recorded locally, but it cannot be retroactively server-attested.');
+  if (state.actionReceiptPersistent === false) throw new Error('Persistent server proofs are not configured on this deployment.');
   const payload=await fetchJson('/api/action/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({planReceipt:snapshot.planReceipt})},15000);
+  if (payload.persistent !== true) {
+    state.actionReceiptPersistent = false;
+    throw new Error('This server proof is restart-sensitive because ACTION_RECEIPT_SECRET is not persistent.');
+  }
+  state.actionReceiptPersistent = true;
   if (typeof payload.completionReceipt!=='string'||payload.completionReceipt.length<20) throw new Error('Server returned no completion proof.');
   return { receipt:payload.completionReceipt, completedAt:canonicalIso(payload.details?.completedAt)||'' };
 }
@@ -1217,6 +1234,12 @@ async function renderImpact() {
     state.impactVerificationState='idle';
     $('metricPickups').textContent='0';$('metricKg').textContent='0.0';
     if($('impactProofNote'))$('impactProofNote').textContent='No server-attested matched completions are stored in this browser yet. Physical handoff remains self-reported.';
+    renderActions(); return;
+  }
+  if(state.actionReceiptPersistent===false){
+    state.impactVerificationState='unavailable';
+    $('metricPickups').textContent='0';$('metricKg').textContent='0.0';
+    if($('impactProofNote'))$('impactProofNote').textContent='Persistent server proofs are not configured, so restart-sensitive receipts are excluded from attested impact. Set ACTION_RECEIPT_SECRET to a stable 32+ character secret.';
     renderActions(); return;
   }
   if(navigator.onLine===false){

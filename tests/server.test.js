@@ -450,13 +450,21 @@ test('analyze endpoint rejects an image whose bytes do not match its MIME type',
 
 
 test('facilities reject invalid coordinates before any external lookup', async () => {
-  const response = await fetch(`${baseUrl}/api/facilities?lat=999&lon=x`);
+  const response = await fetch(`${baseUrl}/api/facilities`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lat: 999, lon: 'x' })
+  });
+  const payload = await response.json();
   assert.equal(response.status, 400);
+  assert.equal(payload.code, 'BAD_COORDINATES');
 });
 
 
 test('facilities reject missing coordinates instead of coercing them to zero', async () => {
-  const response = await fetch(`${baseUrl}/api/facilities`);
+  const response = await fetch(`${baseUrl}/api/facilities`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
   const payload = await response.json();
   assert.equal(response.status, 400);
   assert.equal(payload.code, 'BAD_COORDINATES');
@@ -483,13 +491,14 @@ test('frontend JS references IDs that exist in index.html', async () => {
   }
 });
 
-test('frontend and backend agree on facility tag query contract', async () => {
+test('frontend and backend agree on POST facility tag contract', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const backend = await fs.readFile(path.join(root, 'server.js'), 'utf8');
-  assert.match(frontend, /api\/facilities/);
-  assert.match(backend, /searchParams\.getAll\('tag'\)/);
-  assert.match(backend, /searchParams\.get\('tags'\)/);
+  assert.match(frontend, /fetchJson\('\/api\/facilities'[\s\S]{0,500}method:'POST'[\s\S]{0,500}tags:/);
+  assert.match(backend, /let wantedTags = cleanStringArray\(body\.tags, 12, 80\)/);
+  assert.doesNotMatch(backend, /searchParams\.getAll\('tag'\)/);
+  assert.doesNotMatch(backend, /searchParams\.get\('tags'\)/);
 });
 
 test('frontend and backend tolerate both geocode response shapes', async () => {
@@ -557,9 +566,9 @@ test('PWA cache and frontend script version stay synchronized', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
-  assert.match(html, /app\.js\?v=0\.14\.2/);
-  assert.match(sw, /cleanup-v0\.14\.2/);
-  assert.match(sw, /app\.js\?v=0\.14\.2/);
+  assert.match(html, /app\.js\?v=0\.14\.3/);
+  assert.match(sw, /cleanup-v0\.14\.3/);
+  assert.match(sw, /app\.js\?v=0\.14\.3/);
 });
 
 test('new analysis attempts clear stale results before network work begins', async () => {
@@ -1008,7 +1017,7 @@ test('service worker never caches API routes and respects no-store', async () =>
   const sw = await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /no-store/);
-  assert.match(sw, /cleanup-v0\.14\.2/);
+  assert.match(sw, /cleanup-v0\.14\.3/);
 });
 
 test('Render Blueprint generates receipt secret and wires global AI budget', async () => {
@@ -1167,16 +1176,16 @@ test('mobile CSS includes safe-area bottom padding and does not ellipsize AI sta
   assert.match(css,/\.status-pill \{ max-width:none; white-space:normal; overflow:visible; text-overflow:clip/);
 });
 
-test('manifest and shell asset versions are synchronized to 0.14.2', async () => {
+test('manifest and shell asset versions are synchronized to 0.14.3', async () => {
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const html=await fs.readFile(path.join(root,'public','index.html'),'utf8');
   const sw=await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   const manifest=JSON.parse(await fs.readFile(path.join(root,'public','manifest.webmanifest'),'utf8'));
-  assert.match(html,/styles\.css\?v=0\.14\.2/);
-  assert.match(html,/manifest\.webmanifest\?v=0\.14\.2/);
-  assert.match(sw,/styles\.css\?v=0\.14\.2/);
+  assert.match(html,/styles\.css\?v=0\.14\.3/);
+  assert.match(html,/manifest\.webmanifest\?v=0\.14\.3/);
+  assert.match(sw,/styles\.css\?v=0\.14\.3/);
   assert.equal(manifest.id,'/?source=pwa');
-  assert.match(manifest.icons[0].src,/v=0\.14\.2/);
+  assert.match(manifest.icons[0].src,/v=0\.14\.3/);
 });
 
 test('battery routing requires explicit battery acceptance rather than generic electronics', () => {
@@ -1338,7 +1347,7 @@ test('repository baseline includes complete cleanup history documents without ra
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const changelog=await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8');
   const history=await fs.readFile(path.join(root,'docs','PROJECT_HISTORY.md'),'utf8');
-  assert.match(changelog,/0\.14\.2/);
+  assert.match(changelog,/0\.14\.3/);
   assert.match(history,/changed combined `cleanup` implementation/);
   assert.match(history,/does not contain the raw Android\/web reference repositories/);
 });
@@ -1470,4 +1479,54 @@ test('fetchJson converts browser fetch TypeErrors into a stable network error', 
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /error instanceof TypeError/);
   assert.match(frontend, /wrapped\.code = 'NETWORK_ERROR'/);
+});
+
+
+test('legacy GET lookup routes are rejected so addresses and signed item proofs stay out of URLs', async () => {
+  const geocode = await fetch(`${baseUrl}/api/geocode?q=private-address`);
+  assert.equal(geocode.status, 405);
+  assert.equal(geocode.headers.get('allow'), 'POST');
+  const facility = await fetch(`${baseUrl}/api/facilities?lat=33.6844&lon=73.0479&itemProof=sensitive-proof`);
+  assert.equal(facility.status, 405);
+  assert.equal(facility.headers.get('allow'), 'POST');
+});
+
+test('static HEAD reports the GET representation length without returning a body', async () => {
+  const get = await fetch(`${baseUrl}/index.html`);
+  const bytes = Buffer.byteLength(await get.text());
+  const head = await fetch(`${baseUrl}/index.html`, { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  assert.equal(Number(head.headers.get('content-length')), bytes);
+  assert.equal(await head.text(), '');
+});
+
+test('server rejects a declared oversized JSON body before buffering it', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
+  assert.match(source, /declaredLength[\s\S]{0,300}MAX_BODY_BYTES[\s\S]{0,180}REQUEST_TOO_LARGE/);
+  assert.match(source, /req\.resume\(\)/);
+});
+
+test('proof HTTP responses declare whether the signing secret survives restarts', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
+  assert.match(source, /planReceipt:prepared\.receipt[\s\S]{0,120}persistent:ACTION_RECEIPT_PERSISTENT/);
+  assert.match(source, /completionReceipt:completed\.receipt[\s\S]{0,120}persistent:ACTION_RECEIPT_PERSISTENT/);
+});
+
+test('frontend excludes restart-sensitive proof receipts from durable attested history', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /actionReceiptPersistent/);
+  assert.match(frontend, /payload\.persistent !== true/);
+  assert.match(frontend, /Proof secret not persistent/);
+  assert.match(frontend, /restart-sensitive receipts are excluded from attested impact/);
+});
+
+test('service worker fails a broken core install and deletes only cleanup-owned old caches', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
+  assert.match(sw, /cache\.addAll\(CORE\)\)\);/);
+  assert.doesNotMatch(sw, /cache\.addAll\(CORE\)\)\.catch/);
+  assert.match(sw, /key\.startsWith\('cleanup-v'\)&&key!==CACHE/);
 });

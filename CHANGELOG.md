@@ -2,6 +2,17 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 0.14.3 — Privacy, proof persistence, and offline upgrade safety
+
+- Legacy GET address/facility lookup routes now return 405; typed addresses, coordinates, and signed item proofs stay in POST JSON bodies instead of URLs.
+- Proof-issuing HTTP responses explicitly report whether the signing secret is persistent.
+- The frontend refuses to treat restart-sensitive receipts as durable server attestation and explains how to configure `ACTION_RECEIPT_SECRET`.
+- Failed service-worker core-cache installation now fails the upgrade instead of activating an incomplete offline shell.
+- Service-worker activation deletes only old `cleanup-v*` caches, never unrelated CacheStorage entries on the same origin.
+- Oversized declared JSON requests are rejected before buffering.
+- Static HEAD responses avoid reading the full file and include an accurate Content-Length.
+- PWA/server cache identity bumped to 0.14.3.
+
 ## 0.14.2 — Proof-state and recovery hardening
 
 - Corrupted/manual local action records now fail closed before completion or proof-retry operations.

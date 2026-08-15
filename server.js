@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PUBLIC_REAL_DIR = await fs.realpath(PUBLIC_DIR).catch(() => PUBLIC_DIR);
-const VERSION = '0.14.2';
+const VERSION = '0.14.3';
 
 async function loadDotEnv() {
   try {
@@ -332,6 +332,14 @@ function requireJson(req) {
 
 async function readJson(req) {
   requireJson(req);
+  const declaredLength = String(req.headers['content-length'] || '').trim();
+  if (declaredLength && /^\d+$/.test(declaredLength) && Number(declaredLength) > MAX_BODY_BYTES) {
+    req.resume();
+    const error = new Error('Request body is too large');
+    error.code = 'REQUEST_TOO_LARGE';
+    error.status = 413;
+    throw error;
+  }
   let total = 0;
   const chunks = [];
   for await (const chunk of req) {
@@ -1206,12 +1214,15 @@ async function serveStatic(req, res, pathname) {
     if (!(realPath === PUBLIC_REAL_DIR || realPath.startsWith(`${PUBLIC_REAL_DIR}${path.sep}`))) return false;
     const stat = await fs.stat(realPath);
     if (!stat.isFile()) return false;
-    const data = await fs.readFile(realPath);
     const ext = path.extname(realPath).toLowerCase();
     const types = { '.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.webmanifest':'application/manifest+json','.ico':'image/x-icon' };
     const immutable = /\.(?:png|svg|ico)$/i.test(realPath);
-    res.writeHead(200, securityHeaders({ 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': immutable ? 'public, max-age=86400' : 'no-cache' }));
-    if (req.method === 'HEAD') return res.end();
+    if (req.method === 'HEAD') {
+      res.writeHead(200, securityHeaders({ 'Content-Type': types[ext] || 'application/octet-stream', 'Content-Length': String(stat.size), 'Cache-Control': immutable ? 'public, max-age=86400' : 'no-cache' }));
+      res.end(); return true;
+    }
+    const data = await fs.readFile(realPath);
+    res.writeHead(200, securityHeaders({ 'Content-Type': types[ext] || 'application/octet-stream', 'Content-Length': String(data.length), 'Cache-Control': immutable ? 'public, max-age=86400' : 'no-cache' }));
     res.end(data); return true;
   } catch { return false; }
 }
@@ -1307,13 +1318,15 @@ const server = http.createServer(async (req, res) => {
       }) });
     }
 
-    if ((method === 'POST' || method === 'GET') && url.pathname === '/api/facilities') {
+    if (method === 'GET' && url.pathname === '/api/facilities') {
+      return json(res, 405, { ok:false, code:'POST_REQUIRED', error:'Use POST JSON for facility lookup so location and proof data do not appear in URLs.' }, { 'Allow':'POST' });
+    }
+
+    if (method === 'POST' && url.pathname === '/api/facilities') {
       if (!rateLimitOrReply(req, res, lookupLimiter)) return;
       const connection = disconnectSignal(req, res);
       try {
-        let raw;
-        if (method === 'POST') raw = await readJsonObject(req);
-        else raw = { lat:url.searchParams.get('lat'), lon:url.searchParams.get('lon'), itemProof:url.searchParams.get('itemProof') || '', tags:[...url.searchParams.getAll('tag'), ...String(url.searchParams.get('tags') || '').split(',')] };
+        const raw = await readJsonObject(req);
         const { lat, lon, itemProof, wantedTags } = facilitySearchInputs(raw);
         const roundedKey = `fac:${lat.toFixed(3)}:${lon.toFixed(3)}`;
         let rawFacilities; let demo = false; let warning = '';
@@ -1336,11 +1349,15 @@ const server = http.createServer(async (req, res) => {
       } finally { connection.cleanup(); }
     }
 
-    if ((method === 'POST' || method === 'GET') && url.pathname === '/api/geocode') {
+    if (method === 'GET' && url.pathname === '/api/geocode') {
+      return json(res, 405, { ok:false, code:'POST_REQUIRED', error:'Use POST JSON for address lookup so typed addresses do not appear in URLs.' }, { 'Allow':'POST' });
+    }
+
+    if (method === 'POST' && url.pathname === '/api/geocode') {
       if (!rateLimitOrReply(req, res, lookupLimiter)) return;
       const connection = disconnectSignal(req, res);
       try {
-        const raw = method === 'POST' ? await readJsonObject(req) : { query: url.searchParams.get('q') };
+        const raw = await readJsonObject(req);
         const q = sanitizeLookupText(raw.query ?? raw.q, 200);
         if (q.length < 3) return json(res, 400, { ok:false, code:'BAD_QUERY', error:'Enter at least 3 characters of an address' });
         const key = geocodeCacheKey(q);
@@ -1357,7 +1374,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const body = await readJsonObject(req);
         const prepared = prepareActionReceipt({ facilityProof:body.facilityProof, weight:body.weight, plannedAt:body.plannedAt });
-        return json(res, 200, { ok:true, planReceipt:prepared.receipt, details:prepared.details });
+        return json(res, 200, { ok:true, planReceipt:prepared.receipt, details:prepared.details, persistent:ACTION_RECEIPT_PERSISTENT });
       } catch (error) { return json(res, error.status || 400, { ok:false, code:error.code || 'PLAN_PROOF_FAILED', error:error.message }); }
     }
 
@@ -1366,7 +1383,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const body = await readJsonObject(req);
         const completed = completeActionReceipt({ planReceipt:body.planReceipt });
-        return json(res, 200, { ok:true, completionReceipt:completed.receipt, details:completed.details });
+        return json(res, 200, { ok:true, completionReceipt:completed.receipt, details:completed.details, persistent:ACTION_RECEIPT_PERSISTENT });
       } catch (error) { return json(res, error.status || 400, { ok:false, code:error.code || 'COMPLETION_PROOF_FAILED', error:error.message }); }
     }
 
