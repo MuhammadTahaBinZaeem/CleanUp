@@ -1,144 +1,139 @@
-# cleanup
+# 🌿 CleanUp — AI Waste Assistant & Attested Recycling System
 
-**cleanup** turns a waste photo into a practical disposal plan:
+[![Node.js](https://img.shields.io/badge/Node.js-20%20--%2024-brightgreen.svg)](https://nodejs.org)
+[![Tests](https://img.shields.io/badge/Tests-179%20Passing-emerald.svg)](tests/server.test.js)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Deployment](https://img.shields.io/badge/Deploy-Render%20%7C%20Vercel-success.svg)](VERCEL_DEPLOY.md)
 
-**photo → understand item → safety decision → matched nearby destination → planned drop-off → completion → impact**
+> **Know what to do with *anything* you are about to throw away.**
+> Take a photo. CleanUp identifies the item, flags hazardous or special disposal requirements, generates actionable safety instructions, locates nearby recycling facilities with OpenStreetMap, and seals completed actions with server-signed cryptographic proofs.
 
-It is a mobile-first PWA with a small Node.js backend. Featherless is used for visual understanding, while safety rules, facility matching, action proofs, limits and impact calculations stay deterministic on the server/client workflow.
+---
 
-## What works
+## 📸 Visual Showcase & Workflow
 
-- Photo/camera upload and drag-and-drop.
-- Browser-side resizing for large phone photos.
-- Featherless multimodal structured analysis with multiple detected items.
-- One server-side **Featherless API key**.
-- Automatic internal routing across multiple vision-capable Featherless models.
-- Actual model-used reporting without exposing API keys.
-- Deterministic handling overrides for batteries, e-waste, medical, chemical and other hazardous waste.
-- Qualitative AI certainty instead of fake calibrated percentages.
-- GPS and explicit address search.
-- Privacy-safe POST lookup routes so typed address/GPS values are not put in cleanup's own public query strings.
-- Material-aware recycling-point ranking from OpenStreetMap/Overpass.
-- Explicit ambiguous-address selection instead of silently choosing result #1.
-- Throttled/cached Nominatim access and bounded/cancellable external lookups.
-- Lazy-loaded Leaflet map with a fallback CDN; facility lists still work if the map fails.
-- Planned drop-off and clearly labelled demo pickup flows.
-- Signed analyzed-item, facility-match, pre-action plan and completion proofs.
-- Server-revalidated impact metrics that fail closed if receipts or local history are tampered with.
-- Browser-local history with bounded writes and multi-tab locking where available.
-- Offline local demo fallback and cached PWA shell.
-- Render-ready single-service deployment.
-
-## Signed completion proof: what it proves
-
-cleanup does **not** claim a recycler physically received the waste.
-
-For an eligible non-demo drop-off, the workflow can create this chain:
-
-1. The normalized analyzed item receives a server-signed item proof.
-2. A live facility receives a signed facility proof only when its published material tags match the signed item route.
-3. **Before** the scheduled action, cleanup exchanges that facility proof for a signed plan receipt.
-4. **After** the scheduled time, the valid plan can be exchanged for a signed completion receipt using the server's timestamp.
-5. The impact dashboard re-sends stored completion receipts to the server and counts only receipts that still validate.
-
-This makes browser-local edits tamper-evident and prevents fake local history from inflating attested impact. Physical handoff remains **self-reported** until a recycler-side verifier/QR/account integration exists.
-
-A completed action with no valid pre-action plan is intentionally **not retroactively attestable**. If an old/invalid plan can never produce a completion proof, the UI shows `Attestation unavailable` rather than a retry button that cannot succeed.
-
-## Featherless API and automatic model routing
-
-All Featherless credentials stay on the server. You configure **one key only**:
-
-```env
-FEATHERLESS_API_KEY=your_key_here
+```
+[ 📷 Waste Photo ] ──▶ [ 🧠 Vision AI & Deterministic Safety Rules ]
+                                │
+                                ▼
+                       [ 🏷️ Disposal Action Plan ]
+                                │
+                                ▼
+                [ 📍 Nearby OpenStreetMap Facilities ]
+                                │
+                                ▼
+             [ 📝 Plan Action & Server HMAC Pre-Attestation ]
+                                │
+                                ▼
+            [ ⏱️ Complete Drop-off & Signed Impact Proof ]
 ```
 
-There is no model setting in the app or Render configuration. cleanup automatically routes each scan through an internal pool of vision-capable Featherless models and falls back when a route is cold, unavailable, inaccessible, rate-limited, or temporarily failing. The UI simply reports that automatic routing is ready; you never choose a model.
+---
 
-## Local setup
+## ✨ Key Features & Capabilities
 
-Requires Node.js 20–24.
+- **Smart Multimodal AI Vision**: Upload photos or capture directly from camera. Large images are resized in-browser before upload to conserve bandwidth.
+- **Deterministic Safety Overrides**: Hardened categorization overrides for hazardous items (lithium/alkaline batteries, e-waste, medical waste, sharp objects, and hazardous chemicals).
+- **Server-Attested Drop-Off Proofs**: HMAC-SHA256 signed attestation chain linking recognized materials, matching facilities, scheduled plan receipts, and completion certificates.
+- **Privacy-First Geolocation & Facility Matching**: Reverse geocoding via Nominatim with strict server-side rate limiting, query caching, and POST payloads to keep coordinates out of query strings.
+- **Modern Flat UI Aesthetic**: Curated flat color palettes (emerald, mint, forest pine, crisp slate), Plus Jakarta Sans typography, and rich visual graphics.
+- **Zero-Dependency Core**: Lightweight vanilla JavaScript, modern CSS, and native Node.js HTTP server.
+- **PWA & Offline Fallback**: Service Worker shell caching with full offline demo fallback mode.
+- **Deploy Anywhere**: Pre-configured for both **Render** (via `render.yaml`) and **Vercel** (via `vercel.json`).
+
+---
+
+## 🔒 Cryptographic Attestation Chain
+
+CleanUp does **not** falsely claim physical possession of waste without recycler hardware; instead, it provides a tamper-evident workflow attestation chain:
+
+1. **Item Proof**: Analyzed waste items receive a server-signed HMAC payload binding the material name and route tags.
+2. **Facility Proof**: Facilities matching the signed material tags receive a signed compatibility token.
+3. **Plan Receipt**: Scheduled drop-offs receive a pre-action plan receipt before the scheduled time.
+4. **Completion Receipt**: Upon completion after the planned time, the server mints a verified completion receipt.
+5. **Impact Audit**: Impact totals only count receipts that successfully re-verify against the server signing secret.
+
+---
+
+## 🚀 Quickstart & Local Setup
+
+### Prerequisites
+- Node.js `20.x` or `22.x` / `24.x`
+- npm `10+`
+
+### Installation & Run
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/MuhammadTahaBinZaeem/CleanUp.git
+   cd CleanUp
+   ```
+
+2. **Configure environment**:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Install and verify**:
+   ```bash
+   npm ci
+   npm run check
+   ```
+
+4. **Start local development server**:
+   ```bash
+   npm start
+   ```
+
+5. **Open in browser**:
+   ```text
+   http://localhost:3000
+   ```
+
+> [!NOTE]
+> Without a Featherless API key, the full demo analysis mode works seamlessly out of the box.
+
+---
+
+## 🌐 Deploy to Production
+
+### Deploying to Vercel
+See the complete [Vercel Deployment Guide](VERCEL_DEPLOY.md).
+
+1. Import the repository into [Vercel](https://vercel.com).
+2. Set Environment Variables:
+   - `FEATHERLESS_API_KEY`: Your vision inference key.
+   - `ACTION_RECEIPT_SECRET`: HMAC key for signing attestation receipts.
+   - `NODE_ENV`: `production`
+3. Deploy!
+
+### Deploying to Render
+See the complete [Render Deployment Guide](RENDER_DEPLOY.md).
+- Automated single-service deployment configured via [`render.yaml`](render.yaml).
+
+---
+
+## 🧪 Testing & Verification
+
+Run the full automated test suite (179 passing tests):
 
 ```bash
-cp .env.example .env
-npm ci
-npm run check
-npm start
-```
-
-Open:
-
-```text
-http://localhost:3000
-```
-
-Without a Featherless key, the demo workflow still works. If the backend becomes temporarily unavailable after the page has loaded, cleanup can fall back to fixed local demo data.
-
-## Location services
-
-The server proxies Nominatim and Overpass instead of calling them directly from browser code.
-
-```env
-NOMINATIM_BASE_URL=https://nominatim.openstreetmap.org/search
-OVERPASS_URL=https://overpass-api.de/api/interpreter
-NOMINATIM_MIN_INTERVAL_MS=1100
-GEOCODE_CACHE_MS=86400000
-OUTBOUND_QUEUE_MAX=25
-```
-
-Address lookup happens only after an explicit Search/Enter action; there is no Nominatim autocomplete. The UI advises using a city/area instead of confidential address details where possible.
-
-## Render
-
-`render.yaml` deploys cleanup as one Node web service:
-
-- name: `cleanup`
-- region: Singapore
-- plan: free
-- build: `npm ci && npm run check`
-- start: `npm start`
-- health check: `/healthz`
-- automatic deploys from `main`
-- one Featherless API key slot
-- automatic internal vision-model routing
-- generated `ACTION_RECEIPT_SECRET`
-- bounded AI/location limits and timeouts
-
-Render injects `$PORT`; the server listens on `0.0.0.0:$PORT`.
-
-See [`RENDER_DEPLOY.md`](./RENDER_DEPLOY.md).
-
-## Safety and integrity limits
-
-- AI output can be wrong; local disposal rules take precedence.
-- A displayed OpenStreetMap facility is not a guarantee that an item is accepted; published tags can be incomplete or stale.
-- Special-handling destinations require a signed published-material match.
-- Demo facilities, demo scans and demo pickup never count toward server-attested impact.
-- Signed completion proves the cleanup workflow state, **not physical recycler possession**.
-- cleanup does not dispatch a real collector in this MVP.
-- No user account/database exists yet; history remains browser-local even though eligible workflow receipts are server-signed.
-
-## Tests and CI
-
-```bash
+# Run unit and integration tests
 npm test
+
+# Run syntax check and full test suite
 npm run check
 ```
 
-The repository also runs `npm run check` through GitHub Actions on Node 20, 22 and 24.
+### Health Endpoints
+- `GET /healthz` — Service liveness check.
+- `GET /api/health` — Safe configuration and model route availability status.
 
-Health endpoints:
+---
 
-```text
-GET /healthz
-GET /api/health
-```
+## 📄 License & Documentation
 
-`/api/health` exposes safe configuration metadata such as configured/usable route counts, never secret API-key values.
-
-## Project history
-
-This repository starts from the **changed combined cleanup implementation**. Raw copies of the older Android/web reference projects are intentionally not included.
-
-- Release-by-release changes: [`CHANGELOG.md`](./CHANGELOG.md)
-- Full development story and bug-fix history: [`docs/PROJECT_HISTORY.md`](./docs/PROJECT_HISTORY.md)
+- [Changelog](CHANGELOG.md) — Detailed release history.
+- [Vercel Guide](VERCEL_DEPLOY.md) — Step-by-step Vercel instructions.
+- [Render Guide](RENDER_DEPLOY.md) — Render Blueprint deployment.
+- [Project History](docs/PROJECT_HISTORY.md) — Architectural notes and engineering history.

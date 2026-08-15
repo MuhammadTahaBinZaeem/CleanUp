@@ -3,42 +3,63 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#11362f" />
+  <meta name="theme-color" content="#0d281e" />
   <meta name="description" content="cleanup turns a waste photo into safer disposal guidance, nearby recycling options, and a simple action record." />
   <link rel="manifest" href="/manifest.webmanifest?v=1.0.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css?v=1.0.0" />
   <title>cleanup — AI Waste Assistant</title>
 </head>
 <body>
   <a class="skip-link" href="#scan">Skip to main content</a>
   <header class="topbar">
-    <a class="brand" href="#scan" aria-label="cleanup home"><span class="brand-mark">C</span><span>cleanup</span></a>
+    <a class="brand" href="#scan" aria-label="cleanup home">
+      <img src="/assets/brand-logo.jpg" alt="CleanUp Logo" class="brand-logo-img" />
+      <span class="brand-text">cleanup</span>
+    </a>
     <nav aria-label="Main navigation">
-      <a href="#scan">Scan</a><a href="#nearby">Nearby</a><a href="#pickup">Action</a><a href="#impact">Impact</a>
+      <a href="#scan">Scan</a>
+      <a href="#nearby">Nearby</a>
+      <a href="#pickup">Action</a>
+      <a href="#impact">Impact</a>
     </nav>
     <span id="aiStatus" class="status-pill" role="status">Checking AI…</span>
   </header>
 
   <main>
     <section class="hero">
-      <div>
+      <div class="hero-content">
         <p class="eyebrow">SEE → UNDERSTAND → ACT</p>
         <h1>Know what to do with <em>anything</em> you’re about to throw away.</h1>
         <p class="hero-copy">Take a photo. cleanup identifies the item, flags risky waste, explains the next step, and helps you find a nearby place that may accept it.</p>
-        <a class="primary-btn" href="#scan">Analyze waste</a>
+        <div class="hero-actions">
+          <a class="primary-btn hero-cta" href="#scan">Analyze waste</a>
+          <a class="secondary-btn" href="#nearby">Explore drop-offs</a>
+        </div>
       </div>
       <div class="hero-card" aria-label="Example result">
-        <span class="mini-label">EXAMPLE</span>
-        <div class="example-object">🔋</div>
-        <strong>AA battery</strong>
-        <span class="danger-tag">Special disposal</span>
-        <p>Keep it out of normal recycling. Look for a battery or e-waste collection point and confirm acceptance before travelling.</p>
+        <div class="hero-card-img-wrap">
+          <img src="/assets/battery-hazard.jpg" alt="AA Battery special disposal graphic" class="hero-card-img" />
+        </div>
+        <div class="hero-card-info">
+          <div class="hero-card-head">
+            <span class="mini-label">EXAMPLE</span>
+            <span class="danger-tag">Special disposal</span>
+          </div>
+          <strong>AA Lithium Battery</strong>
+          <p>Keep it out of normal recycling. Look for a battery or e-waste collection point and confirm acceptance before travelling.</p>
+        </div>
       </div>
     </section>
 
     <section id="scan" class="section">
       <div class="section-head">
-        <div><p class="eyebrow">01 · SCAN</p><h2>Show cleanup the waste.</h2></div>
+        <div>
+          <p class="eyebrow">01 · SCAN</p>
+          <h2>Show cleanup the waste.</h2>
+        </div>
         <p>Use your phone camera or upload an image. Large photos are resized in your browser before upload, and the Featherless API key stays on the server.</p>
       </div>
       <div class="scan-grid">
@@ -46,7 +67,12 @@
           <label class="drop-zone" for="wasteImage">
             <input id="wasteImage" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" />
             <img id="preview" alt="Selected waste preview" hidden />
-            <div id="uploadPrompt"><span class="camera-icon">◎</span><strong>Take, choose, or drop a photo</strong><small>JPEG, PNG, WEBP, HEIC/HEIF</small></div>
+            <div id="uploadPrompt">
+              <img src="/assets/upload-scanner.jpg" alt="Camera scanner graphic" class="prompt-scanner-art" />
+              <span class="camera-icon">◎</span>
+              <strong>Take, choose, or drop a photo</strong>
+              <small>JPEG, PNG, WEBP, HEIC/HEIF</small>
+            </div>
             <span id="changePhotoHint" class="change-photo-hint" hidden>Change photo</span>
           </label>
           <div class="button-row">
@@ -56,14 +82,22 @@
           <p id="scanMessage" class="muted" aria-live="polite"></p>
         </div>
         <div id="resultsPanel" class="results-panel empty-state" aria-busy="false">
-          <div><span class="big-icon">↗</span><h3>Your action plan appears here</h3><p>cleanup turns recognition into a disposal decision instead of showing raw AI probabilities.</p></div>
+          <div>
+            <img src="/assets/action-plan.jpg" alt="Action report illustration" class="empty-state-art" />
+            <span class="big-icon">↗</span>
+            <h3>Your action plan appears here</h3>
+            <p>cleanup turns recognition into a disposal decision instead of showing raw AI probabilities.</p>
+          </div>
         </div>
       </div>
     </section>
 
     <section id="nearby" class="section alt-section">
       <div class="section-head">
-        <div><p class="eyebrow">02 · FIND</p><h2>Find somewhere that may take it.</h2></div>
+        <div>
+          <p class="eyebrow">02 · FIND</p>
+          <h2>Find somewhere that may take it.</h2>
+        </div>
         <p>Choose an analyzed item first. cleanup ranks OpenStreetMap recycling points using any published material tags; a match is still not a guarantee of acceptance.</p>
       </div>
 
@@ -82,14 +116,22 @@
       <p class="privacy-note">Address searches are sent to OpenStreetMap Nominatim. Prefer a city or area when possible and avoid confidential details.</p>
 
       <div class="map-layout">
-        <div id="map" class="map"><div class="map-placeholder">Choose an item, then use your location or search an address.</div></div>
+        <div id="map" class="map">
+          <div class="map-placeholder">
+            <img src="/assets/facility-map.jpg" alt="Interactive facility map graphic" class="map-placeholder-art" />
+            <p>Choose an item, then use your location or search an address.</p>
+          </div>
+        </div>
         <div id="facilityList" class="facility-list" aria-busy="false"><p class="muted">No facility search yet.</p></div>
       </div>
     </section>
 
     <section id="pickup" class="section">
       <div class="section-head">
-        <div><p class="eyebrow">03 · ACT</p><h2>Record the next action.</h2></div>
+        <div>
+          <p class="eyebrow">03 · ACT</p>
+          <h2>Record the next action.</h2>
+        </div>
         <p>The current MVP does not dispatch a real collector. A live published material match can receive a server-signed pre-action plan; after the scheduled time, completion can be server-attested. Physical handoff remains self-reported.</p>
       </div>
       <form id="pickupForm" class="pickup-form">
@@ -115,20 +157,34 @@
 
     <section id="impact" class="section impact-section">
       <div class="section-head">
-        <div><p class="eyebrow">04 · IMPACT</p><h2>Count server-attested matched completions.</h2></div>
+        <div>
+          <p class="eyebrow">04 · IMPACT</p>
+          <h2>Count server-attested matched completions.</h2>
+        </div>
         <p>Impact uses server-revalidated signed completion receipts. The receipt proves cleanup signed the matched plan and acknowledged completion after schedule; it does not prove a recycler physically received the waste.</p>
       </div>
-      <div class="metrics">
-        <div class="metric"><strong id="metricScans">0</strong><span>real items analyzed</span></div>
-        <div class="metric"><strong id="metricPickups">0</strong><span>server-attested drop-offs</span></div>
-        <div class="metric"><strong id="metricKg">0.0</strong><span>kg in attested records</span></div>
+      <div class="impact-showcase">
+        <div class="metrics">
+          <div class="metric"><strong id="metricScans">0</strong><span>real items analyzed</span></div>
+          <div class="metric"><strong id="metricPickups">0</strong><span>server-attested drop-offs</span></div>
+          <div class="metric"><strong id="metricKg">0.0</strong><span>kg in attested records</span></div>
+        </div>
+        <div class="impact-cert-card">
+          <img src="/assets/eco-impact.jpg" alt="Verified zero-waste attestation certificate" class="impact-cert-img" />
+        </div>
       </div>
       <p id="impactProofNote" class="impact-note" aria-live="polite">Physical handoff remains self-reported until a recycler-side verifier is connected.</p>
       <button id="clearDataBtn" class="ghost-on-dark" type="button">Clear local history</button>
     </section>
   </main>
 
-  <footer><strong>cleanup</strong><span>AI guidance is informational. Local disposal rules and facility acceptance vary; hazardous items require extra care.</span></footer>
+  <footer>
+    <div class="footer-brand">
+      <img src="/assets/brand-logo.jpg" alt="CleanUp" class="footer-logo-img" />
+      <strong>cleanup</strong>
+    </div>
+    <span>AI guidance is informational. Local disposal rules and facility acceptance vary; hazardous items require extra care.</span>
+  </footer>
 
   <script type="module" src="/app.js?v=1.0.0"></script>
 </body>

@@ -2,6 +2,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   server,
   createRateLimiter,
@@ -485,7 +486,7 @@ test('static traversal attempt does not escape public directory', async () => {
 });
 
 test('frontend JS references IDs that exist in index.html', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const js = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const ids = [...js.matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
@@ -495,7 +496,7 @@ test('frontend JS references IDs that exist in index.html', async () => {
 });
 
 test('frontend and backend agree on POST facility tag contract', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const backend = await fs.readFile(path.join(root, 'server.js'), 'utf8');
   assert.match(frontend, /fetchJson\('\/api\/facilities'[\s\S]{0,500}method:'POST'[\s\S]{0,500}tags:/);
@@ -505,7 +506,7 @@ test('frontend and backend agree on POST facility tag contract', async () => {
 });
 
 test('frontend and backend tolerate both geocode response shapes', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const backend = await fs.readFile(path.join(root, 'server.js'), 'utf8');
   assert.match(frontend, /payload\.results.*payload\.places/);
@@ -534,7 +535,7 @@ test('Featherless prompt permits zero detected waste items instead of forcing ha
 });
 
 test('Render Blueprint is named cleanup, uses a cheap health endpoint, and needs one Featherless key', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
   assert.match(yaml, /name:\s*cleanup/);
   assert.match(yaml, /healthCheckPath:\s*\/healthz/);
@@ -548,21 +549,21 @@ test('Render Blueprint is named cleanup, uses a cheap health endpoint, and needs
 
 
 test('frontend result cards use valid explicit selection buttons instead of wrapping block content in a button', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /data-select-item/);
   assert.doesNotMatch(frontend, /class="result-select"/);
 });
 
 test('pickup mode cannot accidentally save a previously selected real facility', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /action==='dropoff'\?selectedFacility\(\):null/);
   assert.match(frontend, /Demo pickup — no logistics provider connected/);
 });
 
 test('action date defaults use local calendar dates instead of UTC ISO slicing', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /function updateScheduleBounds/);
   assert.match(frontend, /localDateInputValue\(now\)/);
@@ -570,7 +571,7 @@ test('action date defaults use local calendar dates instead of UTC ISO slicing',
 });
 
 test('PWA cache and frontend script version stay synchronized', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
   assert.match(html, /app\.js\?v=1\.0\.0/);
@@ -579,7 +580,7 @@ test('PWA cache and frontend script version stay synchronized', async () => {
 });
 
 test('new analysis attempts clear stale results before network work begins', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /function clearCurrentAnalysisForAttempt/);
   assert.match(frontend, /clearCurrentAnalysisForAttempt\('Analyzing this photo…'\)/);
@@ -588,7 +589,7 @@ test('new analysis attempts clear stale results before network work begins', asy
 
 
 test('image resizing has a non-createImageBitmap fallback', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /typeof window\.createImageBitmap === 'function'/);
   assert.match(frontend, /async function loadDrawableImage/);
@@ -597,7 +598,7 @@ test('image resizing has a non-createImageBitmap fallback', async () => {
 
 
 test('frontend AI timeout exceeds the server failover budget and handles file MIME by extension', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /api\/analyze-waste[\s\S]{0,500}65000/);
   assert.match(frontend, /function inferredImageMime/);
@@ -606,7 +607,7 @@ test('frontend AI timeout exceeds the server failover budget and handles file MI
 });
 
 test('location searches share cancellation state so switching GPS/address cannot leave controls stuck', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /function cancelLocationLookup/);
   assert.match(frontend, /state\.locationController\?\.abort/);
@@ -616,7 +617,7 @@ test('location searches share cancellation state so switching GPS/address cannot
 
 
 test('Leaflet loads lazily so a third-party map CDN cannot block cleanup startup', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.doesNotMatch(html, /unpkg\.com\/leaflet/);
@@ -628,7 +629,7 @@ test('Leaflet loads lazily so a third-party map CDN cannot block cleanup startup
 });
 
 test('facility UI has explicit map controls and map auto-fits returned points', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /show-on-map/);
   assert.match(frontend, /fitBounds\(points/);
@@ -636,14 +637,14 @@ test('facility UI has explicit map controls and map auto-fits returned points', 
 
 
 test('frontend tolerates browsers where serviceWorker exists but is unavailable', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /navigator\.serviceWorker\?\.register/);
   assert.doesNotMatch(frontend, /'serviceWorker' in navigator/);
 });
 
 test('service worker caches only successful responses and does not return homepage HTML for missing assets', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
   assert.match(sw, /response\?\.ok/);
   assert.match(sw, /event\.request\.mode\s*===?\s*'navigate'/);
@@ -652,14 +653,14 @@ test('service worker caches only successful responses and does not return homepa
 
 
 test('special-handling facility selection requires a published material match', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /if \(item\?\.special_handling\) return publishedMatch/);
   assert.match(frontend, /No safe match published/);
 });
 
 test('starting a new GPS or address lookup cancels stale facility results immediately', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /function cancelFacilityLookup/);
   assert.match(frontend, /cancelFacilityLookup\(\{ clear: true, message: 'Getting your location…' \}\)/);
@@ -669,7 +670,7 @@ test('starting a new GPS or address lookup cancels stale facility results immedi
 });
 
 test('future planned actions cannot be marked completed and past plans are rejected', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /A planned action cannot be scheduled in the past/);
   assert.match(frontend, /This action is scheduled for the future/);
@@ -679,7 +680,7 @@ test('future planned actions cannot be marked completed and past plans are rejec
 
 
 test('impact metrics fail closed for malformed local history', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /scan\.demo===false/);
   assert.match(frontend, /function normalizeVerifiedCompletion/);
@@ -689,7 +690,7 @@ test('impact metrics fail closed for malformed local history', async () => {
 
 
 test('mobile keeps navigation available instead of hiding it', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const css = await fs.readFile(path.join(root, 'public', 'styles.css'), 'utf8');
   assert.match(css, /@media \(max-width: 900px\)[\s\S]*nav \{[\s\S]*position: fixed/);
   assert.match(css, /bottom: max\(10px, env\(safe-area-inset-bottom\)\)/);
@@ -697,14 +698,14 @@ test('mobile keeps navigation available instead of hiding it', async () => {
 
 
 test('UI respects reduced-motion preferences', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const css = await fs.readFile(path.join(root, 'public', 'styles.css'), 'utf8');
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /scroll-behavior:\s*auto/);
 });
 
 test('old application version does not remain in deployable source', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const paths = ['package.json', 'render.yaml', 'README.md', 'RENDER_DEPLOY.md', 'server.js', 'public/index.html', 'public/app.js', 'public/styles.css', 'public/sw.js'];
   for (const rel of paths) {
     const source = await fs.readFile(path.join(root, rel), 'utf8');
@@ -713,7 +714,7 @@ test('old application version does not remain in deployable source', async () =>
 });
 
 test('previous product name and capitalized product spelling do not remain in project source', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const paths = [
     'package.json', 'render.yaml', 'README.md', 'RENDER_DEPLOY.md',
     'server.js', 'public/index.html', 'public/app.js',
@@ -727,7 +728,7 @@ test('previous product name and capitalized product spelling do not remain in pr
 });
 
 test('Render Blueprint keeps model routing internal', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
   assert.match(yaml, /- key: FEATHERLESS_API_KEY\n\s+sync: false/);
   assert.doesNotMatch(yaml, /FEATHERLESS_API_KEY_[123]|FEATHERLESS_MODEL_[123]|FEATHERLESS_BASE_URL/);
@@ -739,7 +740,7 @@ test('Render Blueprint keeps model routing internal', async () => {
 });
 
 test('server serializes and caches Nominatim instead of issuing unrestricted public geocoder traffic', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
   assert.match(source, /createSerialGate\(\{ minIntervalMs: NOMINATIM_MIN_INTERVAL_MS \}\)/);
   assert.match(source, /GEOCODE_CACHE_MS/);
@@ -748,7 +749,7 @@ test('server serializes and caches Nominatim instead of issuing unrestricted pub
 });
 
 test('ambiguous geocoder results require an explicit user choice', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(html, /id="addressResults"/);
@@ -758,14 +759,14 @@ test('ambiguous geocoder results require an explicit user choice', async () => {
 });
 
 test('switching analyzed items clears the previous action draft instead of carrying weight and notes across materials', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /const changed = state\.selectedItemIndex !== null && state\.selectedItemIndex !== index/);
   assert.match(frontend, /if \(changed\)[\s\S]{0,140}resetActionDraft\(\{ preserveMaterial: true \}\)/);
 });
 
 test('future actions render as disabled scheduled controls and malformed provenance fails closed', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /disabled>Scheduled<\/button>/);
   assert.match(frontend, /if \(!marker\|\|record\.validRecord===false\) return '<button class="complete-btn" type="button" disabled>Invalid record<\/button>'/);
@@ -773,7 +774,7 @@ test('future actions render as disabled scheduled controls and malformed provena
 });
 
 test('JavaScript scrolling also honors reduced-motion preference', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /prefersReducedMotion/);
   assert.match(frontend, /behavior: prefersReducedMotion\(\) \? 'auto' : 'smooth'/);
@@ -781,7 +782,7 @@ test('JavaScript scrolling also honors reduced-motion preference', async () => {
 });
 
 test('offline state is surfaced and demo has a fixed local fallback', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /Offline · saved history available/);
   assert.match(frontend, /LOCAL_DEMO_RESULT/);
@@ -791,7 +792,7 @@ test('offline state is surfaced and demo has a fixed local fallback', async () =
 });
 
 test('malformed facility payloads are normalized before rendering', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /function normalizeFacilities/);
   assert.match(frontend, /Array\.isArray\(facility\.accepted\)/);
@@ -799,7 +800,7 @@ test('malformed facility payloads are normalized before rendering', async () => 
 });
 
 test('selecting an invalid replacement image cannot accidentally leave the old image armed for analysis', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /function clearSelectedImage/);
   assert.match(frontend, /state\.selectedFile = null/);
@@ -808,7 +809,7 @@ test('selecting an invalid replacement image cannot accidentally leave the old i
 });
 
 test('CSP permits both lazy Leaflet CDN choices but keeps application API calls same-origin', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
   assert.match(source, /script-src 'self' https:\/\/unpkg\.com https:\/\/cdn\.jsdelivr\.net/);
   assert.match(source, /style-src 'self' 'unsafe-inline' https:\/\/unpkg\.com https:\/\/cdn\.jsdelivr\.net/);
@@ -1007,7 +1008,7 @@ test('normalizeFacility rejects JSON booleans as coordinates', () => {
 });
 
 test('frontend uses POST JSON for address and facility lookup privacy', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const source = await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source, /fetchJson\('\/api\/geocode',[\s\S]{0,180}method:'POST'/);
   assert.match(source, /fetchJson\('\/api\/facilities',[\s\S]{0,180}method:'POST'/);
@@ -1016,14 +1017,14 @@ test('frontend uses POST JSON for address and facility lookup privacy', async ()
 });
 
 test('frontend never offers retroactive proof retry when completed record lacks a pre-action plan', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const source = await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source, /if \(!record\.planReceipt\) return '<button class="complete-btn" type="button" disabled>No pre-action proof<\/button>'/);
   assert.match(source, /cannot be retroactively server-attested/);
 });
 
 test('service worker never caches API routes and respects no-store', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const sw = await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /no-store/);
@@ -1031,7 +1032,7 @@ test('service worker never caches API routes and respects no-store', async () =>
 });
 
 test('Render Blueprint generates receipt secret and wires global AI budget', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const yaml = await fs.readFile(path.join(root,'render.yaml'),'utf8');
   assert.match(yaml, /ACTION_RECEIPT_SECRET[\s\S]{0,40}generateValue:\s*true/);
   assert.match(yaml, /AI_GLOBAL_RATE_LIMIT_MAX/);
@@ -1156,14 +1157,14 @@ test('privacy-safe POST facility endpoint rejects booleans as coordinates before
 });
 
 test('frontend proof badge requires local record to remain a real drop-off and non-demo', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source,/record\.action!==\'dropoff\'\|\|record\.isDemo!==false/);
   assert.match(source,/Signed proof differs/);
 });
 
 test('frontend impact trusts only server-returned details that were actually requested', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source,/requested\.has\(raw\.receipt\)/);
   assert.match(source,/state\.verifiedReceiptDetails\.set\(item\.receipt,item\)/);
@@ -1171,7 +1172,7 @@ test('frontend impact trusts only server-returned details that were actually req
 });
 
 test('frontend local history uses bounded storage and a browser lock when available', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source,/MAX_STORAGE_CHARS/);
   assert.match(source,/navigator\.locks\?\.request/);
@@ -1180,14 +1181,14 @@ test('frontend local history uses bounded storage and a browser lock when availa
 });
 
 test('mobile CSS includes safe-area bottom padding and does not ellipsize AI status', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const css=await fs.readFile(path.join(root,'public','styles.css'),'utf8');
   assert.match(css,/padding-bottom:calc\(86px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(css,/\.status-pill \{ max-width:none; white-space:normal; overflow:visible; text-overflow:clip/);
 });
 
 test('manifest and shell asset versions are synchronized to 1.0.0', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const html=await fs.readFile(path.join(root,'public','index.html'),'utf8');
   const sw=await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   const manifest=JSON.parse(await fs.readFile(path.join(root,'public','manifest.webmanifest'),'utf8'));
@@ -1228,7 +1229,7 @@ test('signed dangerous item proof cannot claim ordinary handling or widened rout
 });
 
 test('service-worker refresh is attached to fetch event lifetime', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const sw=await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   assert.match(sw,/function networkAndRefresh\(request, event\)/);
   assert.match(sw,/event\.waitUntil\(refresh\)/);
@@ -1236,14 +1237,14 @@ test('service-worker refresh is attached to fetch event lifetime', async () => {
 });
 
 test('today schedule minimum uses the current minute and cannot wrap tomorrow midnight onto today', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source,/const min = new Date\(now\); min\.setSeconds\(0,0\)/);
   assert.doesNotMatch(source,/const min = new Date\(now\.getTime\(\) \+ 60_000\)/);
 });
 
 test('frontend retries health after a temporary server wake failure instead of leaving stale status', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source,/function scheduleHealthRetry\(\)/);
   assert.match(source,/Server waking or unavailable/);
@@ -1251,14 +1252,14 @@ test('frontend retries health after a temporary server wake failure instead of l
 });
 
 test('demo scan does not overwrite a local scan-history persistence warning', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   const matches=source.match(/applied && !\$\('scanMessage'\)\.textContent\.includes\('could not save'\)/g)||[];
   assert.ok(matches.length >= 3);
 });
 
 test('non-demo special-handling facility selection requires a signed facility proof', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source,/item\?\.special_handling\) return publishedMatch && \(state\.analysisIsDemo \|\| selectedFacilityHasProof\(facility\)\)/);
   assert.match(source,/no signed published-material match/);
@@ -1304,15 +1305,19 @@ test('two separately minted completion receipts for one plan still count once', 
 });
 
 test('static server blocks a symlink that points outside public', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
-  const link=path.join(root,'public',`.escape-${process.pid}.txt`);
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const link = path.join(root, 'public', `.escape-${process.pid}.txt`);
   try {
-    await fs.symlink('/etc/hosts',link);
-    const response=await fetch(`${baseUrl}/${path.basename(link)}`);
-    assert.equal(response.status,404);
-    const text=await response.text();
-    assert.doesNotMatch(text,/localhost/);
-  } finally { await fs.unlink(link).catch(()=>{}); }
+    const target = process.platform === 'win32' ? path.join(root, 'server.js') : '/etc/hosts';
+    await fs.symlink(target, link);
+    const response = await fetch(`${baseUrl}/${path.basename(link)}`);
+    assert.equal(response.status, 404);
+  } catch (err) {
+    if (process.platform === 'win32' && (err.code === 'EPERM' || err.code === 'ENOENT')) {
+      return;
+    }
+    throw err;
+  } finally { await fs.unlink(link).catch(() => {}); }
 });
 
 test('/api/health reports currently available key-model route count', async () => {
@@ -1324,7 +1329,7 @@ test('/api/health reports currently available key-model route count', async () =
 });
 
 test('frontend does not claim AI ready when every key-model route is cooling down', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source,/routeCount === 0/);
   assert.match(source,/AI routes cooling down · demo ready/);
@@ -1338,7 +1343,7 @@ test('material-tag expansion fails closed on malformed non-array input', () => {
 });
 
 test('completed action with permanently invalid pre-action proof cannot offer futile retry', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source,/proofPermanent = proofErrorCode === 'BAD_PLAN_RECEIPT'/);
   assert.match(source,/found\.proofState='completion-unavailable'/);
@@ -1347,14 +1352,14 @@ test('completed action with permanently invalid pre-action proof cannot offer fu
 });
 
 test('history surfaces bounded proof errors instead of silently hiding attestation failure', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const source=await fs.readFile(path.join(root,'public','app.js'),'utf8');
   assert.match(source,/proofError:boundedText\(record\?\.proofError,220\)/);
   assert.match(source,/class="proof-error"/);
 });
 
 test('repository baseline includes complete cleanup history documents without raw reference source trees', async () => {
-  const root=path.resolve(new URL('..',import.meta.url).pathname);
+  const root=fileURLToPath(new URL('..', import.meta.url));
   const changelog=await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8');
   const history=await fs.readFile(path.join(root,'docs','PROJECT_HISTORY.md'),'utf8');
   assert.match(changelog,/1\.0\.0/);
@@ -1389,7 +1394,7 @@ test('client rate-limit identity ignores spoofed forwarded IPs outside Render', 
 });
 
 test('invalid replacement photos clear stale analysis context and restore the upload prompt', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /function clearSelectedImage[\s\S]{0,500}resetAnalysisForNewImage\(\)/);
   assert.match(frontend, /uploadPrompt'\)\.innerHTML = DEFAULT_UPLOAD_PROMPT/);
@@ -1397,7 +1402,7 @@ test('invalid replacement photos clear stale analysis context and restore the up
 });
 
 test('empty impact refresh releases its abort controller instead of leaving stale state', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /state\.impactController\?\.abort\(\); state\.impactController=null;[\s\S]{0,240}if\(!receipts\.length\)/);
 });
@@ -1412,7 +1417,7 @@ test('Featherless cooldown exhaustion reports quota, model access, and mixed coo
 });
 
 test('health checks cancel stale requests so an older response cannot overwrite newer AI status', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /healthGeneration/);
   assert.match(frontend, /const generation = \+\+state\.healthGeneration/);
@@ -1421,7 +1426,7 @@ test('health checks cancel stale requests so an older response cannot overwrite 
 });
 
 test('saved action notes are sanitized and rendered back in history', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /note:boundedText\(record\?\.note,300\)/);
   assert.match(frontend, /history-note/);
@@ -1429,21 +1434,21 @@ test('saved action notes are sanitized and rendered back in history', async () =
 });
 
 test('minute schedule refresh does not revalidate every completion receipt', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /setInterval\(\(\) => \{ updateScheduleBounds\(\); if \(document\.visibilityState === 'visible'\) renderActions\(\); \}, 60_000\)/);
   assert.doesNotMatch(frontend, /setInterval\([\s\S]{0,180}renderImpact\(\)[\s\S]{0,60}60_000/);
 });
 
 test('Render explicitly enables production error responses', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
   assert.match(yaml, /NODE_ENV[\s\S]{0,40}production/);
 });
 
 
 test('stored action history fails closed on invalid weight, missing destination, and non-demo pickup provenance', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /function storedActionIsValid\(record\)/);
   assert.match(frontend, /!strictStoredWeight\(record\?\.weight\)/);
@@ -1453,7 +1458,7 @@ test('stored action history fails closed on invalid weight, missing destination,
 });
 
 test('completion and proof-retry paths revalidate raw local records before mutation or server calls', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /async function completeRecord[\s\S]{0,500}!storedActionIsValid\(snapshot\)/);
   assert.match(frontend, /async function retryPlanProof[\s\S]{0,650}!storedActionIsValid\(snapshot\)/);
@@ -1461,7 +1466,7 @@ test('completion and proof-retry paths revalidate raw local records before mutat
 });
 
 test('visible health checks keep probing at a bounded low frequency after a long outage', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const block = frontend.match(/function scheduleHealthRetry\(\) \{[\s\S]*?\n\}/)?.[0] || '';
   assert.match(block, /120000/);
@@ -1470,14 +1475,14 @@ test('visible health checks keep probing at a bounded low frequency after a long
 });
 
 test('successful impact verification visibly rejects stored receipts omitted by the server', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /impactVerificationState==='verified'[\s\S]{0,120}Stored proof did not validate/);
   assert.match(frontend, /impactVerificationState==='unavailable'[\s\S]{0,140}revalidation unavailable/);
 });
 
 test('impact verification skips network work offline and ignores stale controller completions', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /if\(navigator\.onLine===false\)[\s\S]{0,500}renderActions\(\); return;/);
   assert.match(frontend, /if\(state\.impactController!==controller\)return;/);
@@ -1485,7 +1490,7 @@ test('impact verification skips network work offline and ignores stale controlle
 });
 
 test('fetchJson converts browser fetch TypeErrors into a stable network error', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /error instanceof TypeError/);
   assert.match(frontend, /wrapped\.code = 'NETWORK_ERROR'/);
@@ -1511,21 +1516,21 @@ test('static HEAD reports the GET representation length without returning a body
 });
 
 test('server rejects a declared oversized JSON body before buffering it', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
   assert.match(source, /declaredLength[\s\S]{0,300}MAX_BODY_BYTES[\s\S]{0,180}REQUEST_TOO_LARGE/);
   assert.match(source, /req\.resume\(\)/);
 });
 
 test('proof HTTP responses declare whether the signing secret survives restarts', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
   assert.match(source, /planReceipt:prepared\.receipt[\s\S]{0,120}persistent:ACTION_RECEIPT_PERSISTENT/);
   assert.match(source, /completionReceipt:completed\.receipt[\s\S]{0,120}persistent:ACTION_RECEIPT_PERSISTENT/);
 });
 
 test('frontend excludes restart-sensitive proof receipts from durable attested history', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /actionReceiptPersistent/);
   assert.match(frontend, /payload\.persistent !== true/);
@@ -1534,7 +1539,7 @@ test('frontend excludes restart-sensitive proof receipts from durable attested h
 });
 
 test('service worker fails a broken core install and deletes only cleanup-owned old caches', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
   assert.match(sw, /cache\.addAll\(CORE\)\)\);/);
   assert.doesNotMatch(sw, /cache\.addAll\(CORE\)\)\.catch/);
@@ -1543,7 +1548,7 @@ test('service worker fails a broken core install and deletes only cleanup-owned 
 
 
 test('scan history writes use the browser storage lock instead of an unlocked get-set pair', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /async function setAnalysis\(result, demo, expectedHistoryGeneration = historyGenerationToken\(\)\)/);
   assert.match(frontend, /mutateStoredArray\(STORAGE_SCANS,[\s\S]{0,220}\[scan, \.\.\.scans\]/);
@@ -1551,14 +1556,14 @@ test('scan history writes use the browser storage lock instead of an unlocked ge
 });
 
 test('action insertion repeats duplicate detection inside the storage lock', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /mutateStoredArray\(STORAGE_ACTIONS,[\s\S]{0,500}recordFingerprint\(existing\)===fingerprint[\s\S]{0,300}inserted=true/);
   assert.match(frontend, /possibly in another tab/);
 });
 
 test('proof retry paths report whether browser storage actually accepted the receipt', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /const saved=await mutateStoredArray\(STORAGE_ACTIONS[\s\S]{0,500}proof was created, but browser storage could not save it/i);
   assert.match(frontend, /Server attestation succeeded, but browser storage could not save the receipt/);
@@ -1566,14 +1571,14 @@ test('proof retry paths report whether browser storage actually accepted the rec
 });
 
 test('completed local records require valid status and a consistent completion timestamp', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /!\['planned','completed'\]\.includes\(status\)/);
   assert.match(frontend, /status === 'completed'[\s\S]{0,350}completedAt[\s\S]{0,350}Date\.parse\(completedAt\) < Date\.parse\(plannedAt\)/);
 });
 
 test('completion mutation detects a concurrent no-op instead of claiming a local write succeeded', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const block = frontend.match(/async function completeRecord\(marker\) \{[\s\S]*?\n\}\nasync function retryCompletionProof/)?.[0] || '';
   assert.match(block, /let updated=false/);
@@ -1597,14 +1602,14 @@ test('Render rate limiting uses the first forwarded IP as the documented real cl
 });
 
 test('clear history acquires both browser storage locks before deleting scan and action data', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /async function clearStoredHistory\(\)[\s\S]{0,450}withStorageLock\(STORAGE_ACTIONS[\s\S]{0,220}withStorageLock\(STORAGE_SCANS/);
   assert.match(frontend, /clearDataBtn'[\s\S]{0,250}async \(event\)[\s\S]{0,400}await clearStoredHistory\(\)/);
 });
 
 test('proof retry buttons are disabled when the deployment uses a non-persistent signing secret', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const block = frontend.match(/function completionControl\(record\) \{[\s\S]*?\n\}/)?.[0] || '';
   assert.match(block, /actionReceiptPersistent === false[\s\S]{0,180}Proof secret unavailable/);
@@ -1613,7 +1618,7 @@ test('proof retry buttons are disabled when the deployment uses a non-persistent
 
 
 test('plan, completion, and attestation operations use a shared per-action cross-tab lock', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /async function withActionOperationLock\(marker, task\)[\s\S]{0,150}action-operation:\$\{marker\}/);
   assert.match(frontend, /async function retryPlanProof[\s\S]{0,260}await withActionOperationLock\(marker/);
@@ -1622,7 +1627,7 @@ test('plan, completion, and attestation operations use a shared per-action cross
 });
 
 test('waiting tabs re-read action state and do not mint duplicate stored proofs', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /snapshot\.planReceipt[\s\S]{0,160}already stored for this action/);
   assert.match(frontend, /snapshot\.completionReceipt[\s\S]{0,160}already has a stored server attestation/);
@@ -1632,7 +1637,7 @@ test('waiting tabs re-read action state and do not mint duplicate stored proofs'
 
 
 test('full action creation is serialized across tabs before any plan proof is requested', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const block = frontend.match(/\$\('pickupForm'\)\.addEventListener\('submit'[\s\S]*?\n\}\);\n\nfunction proofDetailsMatchRecord/)?.[0] || '';
   const lockIndex = block.indexOf('withStorageLock(`action-create:${fingerprint}`');
@@ -1643,7 +1648,7 @@ test('full action creation is serialized across tabs before any plan proof is re
 });
 
 test('action creation stamps createdAt after a potentially slow proof request', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const block = frontend.match(/\$\('pickupForm'\)\.addEventListener\('submit'[\s\S]*?\n\}\);\n\nfunction proofDetailsMatchRecord/)?.[0] || '';
   assert.match(block, /createdAt:''/);
@@ -1690,7 +1695,7 @@ test('aborting one cachedLookup waiter does not cancel the shared lookup for oth
 });
 
 test('facility and geocode routes pass caller cancellation only to the shared-lookup waiter', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
   assert.match(source, /cachedLookup\(roundedKey, \(\) => overpassFacilities\(lat, lon, 12000\), LOOKUP_CACHE_MS, \{ signal: connection\.signal \}\)/);
   assert.match(source, /cachedLookup\(key, \(\) => geocodeAddress\(q\), GEOCODE_CACHE_MS, \{ signal: connection\.signal \}\)/);
@@ -1700,7 +1705,7 @@ test('facility and geocode routes pass caller cancellation only to the shared-lo
 
 
 test('scan analysis captures a history generation before network work and refuses a pre-clear history write', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /analyzeBtn'[\s\S]{0,220}const historyGeneration = historyGenerationToken\(\)/);
   assert.match(frontend, /setAnalysis\(payload\.result, false, historyGeneration\)/);
@@ -1711,7 +1716,7 @@ test('scan analysis captures a history generation before network work and refuse
 });
 
 test('new action creation checks the history generation before and after slow proof work', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const block = frontend.match(/\$\('pickupForm'\)\.addEventListener\('submit'[\s\S]*?\n\}\);\n\nfunction proofDetailsMatchRecord/)?.[0] || '';
   assert.match(block, /const historyGeneration = historyGenerationToken\(\)/);
@@ -1724,7 +1729,7 @@ test('new action creation checks the history generation before and after slow pr
 });
 
 test('clear history advances a cross-tab generation marker while both history stores are locked', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const block = frontend.match(/async function clearStoredHistory\(\) \{[\s\S]*?\n\}/)?.[0] || '';
   assert.match(block, /withStorageLock\(STORAGE_ACTIONS[\s\S]{0,200}withStorageLock\(STORAGE_SCANS/);
@@ -1734,7 +1739,7 @@ test('clear history advances a cross-tab generation marker while both history st
 
 
 test('deployable v1 source uses one Featherless key and contains no Gemini runtime variables', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const root = fileURLToPath(new URL('..', import.meta.url));
   for (const rel of ['server.js', 'public/app.js', 'public/index.html', 'render.yaml', '.env.example', 'RENDER_DEPLOY.md', 'README.md']) {
     const text = await fs.readFile(path.join(root, rel), 'utf8');
     assert.doesNotMatch(text, /GEMINI_API_KEY|GEMINI_MODEL|generativelanguage\.googleapis\.com/);

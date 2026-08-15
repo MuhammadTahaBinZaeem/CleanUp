@@ -1232,8 +1232,8 @@ async function serveStatic(req, res, pathname) {
     const stat = await fs.stat(realPath);
     if (!stat.isFile()) return false;
     const ext = path.extname(realPath).toLowerCase();
-    const types = { '.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.webmanifest':'application/manifest+json','.ico':'image/x-icon' };
-    const immutable = /\.(?:png|svg|ico)$/i.test(realPath);
+    const types = { '.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.webmanifest':'application/manifest+json','.ico':'image/x-icon' };
+    const immutable = /\.(?:png|jpg|jpeg|webp|svg|ico)$/i.test(realPath);
     if (req.method === 'HEAD') {
       res.writeHead(200, securityHeaders({ 'Content-Type': types[ext] || 'application/octet-stream', 'Content-Length': String(stat.size), 'Cache-Control': immutable ? 'public, max-age=86400' : 'no-cache' }));
       res.end(); return true;
@@ -1454,3 +1454,8 @@ export {
   prepareActionReceipt, completeActionReceipt, validSignedPlanPayload, validSignedCompletionPayload,
   verifyCompletionReceiptEntries, verifyCompletionReceipts
 };
+
+export default (req, res) => {
+  server.emit('request', req, res);
+};
+
