@@ -2,6 +2,14 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 0.14.5 — Render identity and history-clear race fixes
+
+- Render rate limiting now uses the first `X-Forwarded-For` address, matching Render's documented real-client ordering instead of accidentally selecting a later proxy hop.
+- Clearing local history now acquires the same Web Locks-backed scan/action storage locks used by writes, preventing a concurrent tab from restoring stale data during a clear operation where browser locks are available.
+- The clear-history button is disabled while the locked deletion is in progress.
+- Proof retry controls are disabled when the current deployment is known to use a non-persistent signing secret, avoiding buttons that can only fail.
+- PWA/server cache identity bumped to 0.14.5.
+
 ## 0.14.4 — Multi-tab history and mutation correctness
 
 - Scan-history writes now use the same Web Locks-backed storage mutation path as action history, preventing concurrent tabs from overwriting each other where browser locks are available.

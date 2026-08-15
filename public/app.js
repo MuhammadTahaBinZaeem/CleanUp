@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const APP_VERSION = '0.14.4';
+const APP_VERSION = '0.14.5';
 const STORAGE_SCANS = 'cleanup_scans';
 const STORAGE_ACTIONS = 'cleanup_actions';
 const MAX_SELECTED_FILE_BYTES = 30 * 1024 * 1024;
@@ -1125,10 +1125,12 @@ function completionControl(record) {
   if (record.status==='completed') {
     if (!record.planReceipt) return '<button class="complete-btn" type="button" disabled>No pre-action proof</button>';
     if (!record.completionReceipt && record.proofState==='completion-unavailable') return '<button class="complete-btn" type="button" disabled>Attestation unavailable</button>';
+    if (!record.completionReceipt && state.actionReceiptPersistent === false) return '<button class="complete-btn" type="button" disabled>Proof secret unavailable</button>';
     if (!record.completionReceipt) return `<button class="complete-btn" data-retry-completion="${escapeHtml(marker)}" type="button">Retry attestation</button>`;
     return '<span class="safe-tag">Completed</span>';
   }
   if (planned.getTime()>Date.now()) {
+    if (!record.planReceipt&&record.facilityProof&&state.actionReceiptPersistent === false) return '<button class="complete-btn" type="button" disabled>Proof secret unavailable</button>';
     if (!record.planReceipt&&record.facilityProof) return `<button class="complete-btn" data-retry-plan="${escapeHtml(marker)}" type="button">Retry plan proof</button>`;
     return '<button class="complete-btn" type="button" disabled>Scheduled</button>';
   }
@@ -1288,14 +1290,25 @@ async function renderImpact() {
     if(state.impactController===controller){state.impactController=null;renderActions();}
   }
 }
-$('clearDataBtn').addEventListener('click', () => {
+async function clearStoredHistory() {
+  return withStorageLock(STORAGE_ACTIONS, () => withStorageLock(STORAGE_SCANS, async () => ({
+    scansRemoved: storage.remove(STORAGE_SCANS),
+    actionsRemoved: storage.remove(STORAGE_ACTIONS)
+  })));
+}
+$('clearDataBtn').addEventListener('click', async (event) => {
   if (!window.confirm('Clear all locally stored scans and action history from this browser? This cannot be undone.')) return;
-  const scansRemoved = storage.remove(STORAGE_SCANS);
-  const actionsRemoved = storage.remove(STORAGE_ACTIONS);
-  state.verifiedReceiptDetails=new Map();
-  state.impactVerificationState='idle';
-  $('pickupMessage').textContent = scansRemoved && actionsRemoved ? 'Local history cleared.' : 'Some local history could not be cleared.';
-  renderImpact();
+  const button = event.currentTarget;
+  if (button) button.disabled = true;
+  try {
+    const { scansRemoved, actionsRemoved } = await clearStoredHistory();
+    state.verifiedReceiptDetails=new Map();
+    state.impactVerificationState='idle';
+    $('pickupMessage').textContent = scansRemoved && actionsRemoved ? 'Local history cleared.' : 'Some local history could not be cleared.';
+    await renderImpact();
+  } finally {
+    if (button) button.disabled = false;
+  }
 });
 
 health();

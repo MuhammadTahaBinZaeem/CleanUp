@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PUBLIC_REAL_DIR = await fs.realpath(PUBLIC_DIR).catch(() => PUBLIC_DIR);
-const VERSION = '0.14.4';
+const VERSION = '0.14.5';
 
 async function loadDotEnv() {
   try {
@@ -301,7 +301,7 @@ function clientKey(req) {
   // Only trust proxy-provided forwarding headers on Render, where the proxy is part of the deployment boundary.
   // On direct/local hosting an arbitrary client can spoof X-Forwarded-For, so rate limits must use the socket peer.
   if (process.env.RENDER === 'true' || process.env.RENDER_SERVICE_ID) {
-    for (let index = forwarded.length - 1; index >= 0; index -= 1) if (isIP(forwarded[index])) return forwarded[index];
+    for (const value of forwarded) if (isIP(value)) return value;
   }
   const remote = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
   return isIP(remote) ? remote : 'unknown';
