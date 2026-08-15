@@ -17,9 +17,9 @@ replacement="""test('Featherless config uses exactly one API key and internal au
   assert.deepEqual(config.models, ['Qwen/Qwen3.6-35B-A3B', 'Qwen/Qwen3.6-27B', 'google/gemma-4-31B-it']);
 });
 
-test('Featherless slot-1 legacy key alias is accepted but model selection remains automatic', () => {
-  const config = getFeatherlessConfig({ FEATHERLESS_API_KEY_1: 'legacy-key', FEATHERLESS_MODEL: 'ignored/Model' });
-  assert.deepEqual(config.keys, ['legacy-key']);
+test('old key/model slot variables are ignored so deployment stays one-key and automatic', () => {
+  const config = getFeatherlessConfig({ FEATHERLESS_API_KEY_1: 'old-key', FEATHERLESS_MODEL: 'ignored/Model' });
+  assert.deepEqual(config.keys, []);
   assert.deepEqual(config.models, ['Qwen/Qwen3.6-35B-A3B', 'Qwen/Qwen3.6-27B', 'google/gemma-4-31B-it']);
 });
 
@@ -66,9 +66,22 @@ test('Featherless prompt permits zero detected waste items instead of forcing ha
 s,c=re.subn(pattern,lambda _: replacement,s,count=1,flags=re.S)
 if c!=1: raise RuntimeError(f'request contract block replacement count {c}')
 
-s=s.replace(r"/FEATHERLESS_MODEL_1[\s\S]*featherless-3\.6-flash/", r"/FEATHERLESS_API_KEY[\s\S]*sync:\s*false/")
-s=s.replace("  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');", "  assert.doesNotMatch(yaml, /FEATHERLESS_MODEL_[123]|FEATHERLESS_API_KEY_[123]|FEATHERLESS_BASE_URL/);\n  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');")
-s=s.replace("  assert.match(envExample, /FEATHERLESS_API_KEY_2=/);\n  assert.match(envExample, /FEATHERLESS_API_KEY_3=/);", "  assert.match(envExample, /^FEATHERLESS_API_KEY=/m);\n  assert.doesNotMatch(envExample, /FEATHERLESS_API_KEY_[123]|FEATHERLESS_MODEL/);")
+# Replace the original Render baseline test wholesale instead of carrying old three-key expectations.
+pattern=r"test\('Render Blueprint is named cleanup and uses a cheap health endpoint'.*?\n\}\);"
+replacement="""test('Render Blueprint is named cleanup, uses a cheap health endpoint, and needs one Featherless key', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
+  assert.match(yaml, /name:\\s*cleanup/);
+  assert.match(yaml, /healthCheckPath:\\s*\\/healthz/);
+  assert.match(yaml, /- key: FEATHERLESS_API_KEY\\n\\s+sync: false/);
+  assert.doesNotMatch(yaml, /FEATHERLESS_API_KEY_[123]|FEATHERLESS_MODEL_[123]|FEATHERLESS_BASE_URL/);
+  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');
+  assert.match(envExample, /^FEATHERLESS_API_KEY=/m);
+  assert.doesNotMatch(envExample, /^FEATHERLESS_API_KEY_[123]=/m);
+  assert.doesNotMatch(envExample, /^FEATHERLESS_MODEL(?:_[123])?=/m);
+});"""
+s,c=re.subn(pattern,lambda _: replacement,s,count=1,flags=re.S)
+if c!=1: raise RuntimeError(f'Render baseline replacement count {c}')
 
 s=s.replace("test('invalid API key HTTP 400 is classified as key failure so rotation can continue', () => {\n  assert.equal(featherlessFailureKind(400, '{\"reason\":\"API_KEY_INVALID\",\"message\":\"API key not valid\"}'), 'key');\n});", "test('Featherless invalid API key HTTP 401 is a key failure while cold HTTP 400 falls back models', () => {\n  assert.equal(featherlessFailureKind(401, '{\"message\":\"API key is not recognized\"}'), 'key');\n  assert.equal(featherlessFailureKind(400, '{\"message\":\"model is cold and not ready for inference\"}'), 'model-cold');\n});")
 s=s.replace('Featherless invalid-key 400 rotates to the next key instead of stopping failover', 'Featherless invalid-key failure is surfaced cleanly with one configured key')
@@ -78,7 +91,7 @@ s=s.replace('0.14.9', '1.0.0')
 s=s.replace('synchronized to 0.14.9', 'synchronized to 1.0.0')
 
 pattern=r"test\('Render Blueprint exposes all three Featherless secret slots and configurable provider controls'.*?\n\}\);"
-replacement="""test('Render Blueprint exposes one Featherless key and keeps model routing internal', async () => {
+replacement="""test('Render Blueprint keeps model routing internal', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
   assert.match(yaml, /- key: FEATHERLESS_API_KEY\\n\\s+sync: false/);
@@ -104,7 +117,11 @@ test('deployable v1 source uses one Featherless key and contains no Gemini runti
   assert.match(backend, /Authorization': `Bearer \$\{apiKey\}`/);
   const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');
   assert.equal((envExample.match(/^FEATHERLESS_API_KEY=/gm) || []).length, 1);
-  assert.doesNotMatch(envExample, /FEATHERLESS_MODEL/);
+  assert.doesNotMatch(envExample, /^FEATHERLESS_API_KEY_[123]=/m);
+  assert.doesNotMatch(envExample, /^FEATHERLESS_MODEL(?:_[123])?=/m);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /AI ready · automatic routing/);
+  assert.doesNotMatch(frontend, /AI ready · \\${model}/);
 });
 """
 s += insert
