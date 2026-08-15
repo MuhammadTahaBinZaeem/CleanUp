@@ -4,26 +4,22 @@ import re
 p=Path('tests/server.test.js')
 s=p.read_text()
 
-# Import the provider request-builder contract.
 s=s.replace('  featherlessFailureKind,\n  orderedKeySlots,', '  featherlessFailureKind,\n  createFeatherlessRequestBody,\n  orderedKeySlots,')
 
-# Replace provider configuration tests with real Featherless owner/model IDs.
 pattern=r"test\('Featherless config accepts up to three keys, removes duplicates, and supports legacy aliases'.*?test\('key slot ordering starts from the last healthy key and wraps around'"
-replacement="""test('Featherless config accepts up to three keys, removes duplicates, and supports legacy aliases', () => {
+replacement="""test('Featherless config uses exactly one API key and internal automatic model routing', () => {
   const config = getFeatherlessConfig({
-    FEATHERLESS_API_KEY: ' key-one ',
-    FEATHERLESS_API_KEY_2: 'key-two',
-    FEATHERLESS_API_KEY_3: 'key-two',
-    FEATHERLESS_MODEL: 'Acme/Primary-Vision',
-    FEATHERLESS_MODEL_2: 'Acme/Backup-Vision',
-    FEATHERLESS_MODEL_3: 'bad model name with spaces'
+    FEATHERLESS_API_KEY: ' one-key ',
+    FEATHERLESS_API_KEY_2: 'ignored-extra-key',
+    FEATHERLESS_MODEL_1: 'ignored/Custom-Model'
   });
-  assert.deepEqual(config.keys, ['key-one', 'key-two']);
-  assert.deepEqual(config.models, ['Acme/Primary-Vision', 'Acme/Backup-Vision']);
+  assert.deepEqual(config.keys, ['one-key']);
+  assert.deepEqual(config.models, ['Qwen/Qwen3.6-35B-A3B', 'Qwen/Qwen3.6-27B', 'google/gemma-4-31B-it']);
 });
 
-test('Featherless config defaults to three warm vision-capable model IDs', () => {
-  const config = getFeatherlessConfig({ FEATHERLESS_API_KEY_1: 'x' });
+test('Featherless slot-1 legacy key alias is accepted but model selection remains automatic', () => {
+  const config = getFeatherlessConfig({ FEATHERLESS_API_KEY_1: 'legacy-key', FEATHERLESS_MODEL: 'ignored/Model' });
+  assert.deepEqual(config.keys, ['legacy-key']);
   assert.deepEqual(config.models, ['Qwen/Qwen3.6-35B-A3B', 'Qwen/Qwen3.6-27B', 'google/gemma-4-31B-it']);
 });
 
@@ -47,7 +43,6 @@ test('key slot ordering starts from the last healthy key and wraps around'"""
 s,c=re.subn(pattern,replacement,s,count=1,flags=re.S)
 if c!=1: raise RuntimeError(f'provider config block replacement count {c}')
 
-# Replace Gemini-specific source-shape tests with the actual OpenAI-compatible vision request contract.
 pattern=r"test\('Featherless structured output uses responseFormat schema without deprecated sampling settings'.*?\n\}\);\n\ntest\('Featherless schema permits zero detected waste items instead of forcing hallucination'.*?\n\}\);"
 replacement="""test('Featherless request uses OpenAI-compatible JSON-mode vision content', () => {
   const body = createFeatherlessRequestBody({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA, model: 'Qwen/Qwen3.6-35B-A3B' });
@@ -71,35 +66,47 @@ test('Featherless prompt permits zero detected waste items instead of forcing ha
 s,c=re.subn(pattern,replacement,s,count=1,flags=re.S)
 if c!=1: raise RuntimeError(f'request contract block replacement count {c}')
 
-# Update provider and model expectations in Render/env regression.
-s=s.replace(r"/FEATHERLESS_MODEL_1[\s\S]*featherless-3\.6-flash/", r"/FEATHERLESS_MODEL_1[\s\S]*Qwen\/Qwen3\.6-35B-A3B/")
-s=s.replace("  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');", "  assert.match(yaml, /FEATHERLESS_BASE_URL[\\s\\S]*api\\.featherless\\.ai\\/v1/);\n  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');")
+# Render/env expectations: exactly one secret and no user-facing model config.
+s=s.replace(r"/FEATHERLESS_MODEL_1[\s\S]*featherless-3\.6-flash/", r"/FEATHERLESS_API_KEY[\s\S]*sync:\s*false/")
+s=s.replace("  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');", "  assert.doesNotMatch(yaml, /FEATHERLESS_MODEL_[123]|FEATHERLESS_API_KEY_[123]|FEATHERLESS_BASE_URL/);\n  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');")
+s=s.replace("  assert.match(envExample, /FEATHERLESS_API_KEY_2=/);\n  assert.match(envExample, /FEATHERLESS_API_KEY_3=/);", "  assert.match(envExample, /^FEATHERLESS_API_KEY=/m);\n  assert.doesNotMatch(envExample, /FEATHERLESS_API_KEY_[123]|FEATHERLESS_MODEL/);")
 
-# Provider semantics: invalid key is 401; 400 cold/not-ready is a model availability condition.
-s=s.replace("test('invalid API key HTTP 400 is classified as key failure so rotation can continue', () => {\n  assert.equal(featherlessFailureKind(400, '{\"reason\":\"API_KEY_INVALID\",\"message\":\"API key not valid\"}'), 'key');\n});", "test('Featherless invalid API key HTTP 401 rotates keys while cold HTTP 400 falls back models', () => {\n  assert.equal(featherlessFailureKind(401, '{\"message\":\"API key is not recognized\"}'), 'key');\n  assert.equal(featherlessFailureKind(400, '{\"message\":\"model is cold and not ready for inference\"}'), 'model-cold');\n});")
+s=s.replace("test('invalid API key HTTP 400 is classified as key failure so rotation can continue', () => {\n  assert.equal(featherlessFailureKind(400, '{\"reason\":\"API_KEY_INVALID\",\"message\":\"API key not valid\"}'), 'key');\n});", "test('Featherless invalid API key HTTP 401 is a key failure while cold HTTP 400 falls back models', () => {\n  assert.equal(featherlessFailureKind(401, '{\"message\":\"API key is not recognized\"}'), 'key');\n  assert.equal(featherlessFailureKind(400, '{\"message\":\"model is cold and not ready for inference\"}'), 'model-cold');\n});")
+s=s.replace('Featherless invalid-key 400 rotates to the next key instead of stopping failover', 'Featherless invalid-key failure is surfaced cleanly with one configured key')
 
-# Correct misleading later title/source assumptions if present.
-s=s.replace('Featherless invalid-key 400 rotates to the next key instead of stopping failover', 'Featherless invalid-key failure rotates to the next key instead of stopping failover')
-
-# Release/cache expectations.
 s=s.replace(r'0\.14\.9', r'1\.0\.0')
 s=s.replace('0.14.9', '1.0.0')
 s=s.replace('synchronized to 0.14.9', 'synchronized to 1.0.0')
 
-# Add a provider-cleanliness regression: deployable source should no longer require Gemini configuration.
+# Replace old three-secret/configurable-model blueprint test if present after provider-wide rename.
+s=re.sub(r"test\('Render Blueprint exposes all three Featherless secret slots and configurable provider controls'.*?\n\}\);", """test('Render Blueprint exposes one Featherless key and keeps model routing internal', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
+  assert.match(yaml, /- key: FEATHERLESS_API_KEY\\n\\s+sync: false/);
+  assert.doesNotMatch(yaml, /FEATHERLESS_API_KEY_[123]|FEATHERLESS_MODEL_[123]|FEATHERLESS_BASE_URL/);
+  const backend = await fs.readFile(path.join(root, 'server.js'), 'utf8');
+  assert.match(backend, /AUTO_FEATHERLESS_MODELS/);
+  assert.match(backend, /Qwen\/Qwen3\\.6-35B-A3B/);
+  assert.match(backend, /Qwen\/Qwen3\\.6-27B/);
+  assert.match(backend, /google\/gemma-4-31B-it/);
+});""", s, count=1, flags=re.S)
+
 insert="""
 
-test('deployable v1 source uses Featherless configuration and contains no Gemini runtime variables', async () => {
+test('deployable v1 source uses one Featherless key and contains no Gemini runtime variables', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
-  for (const rel of ['server.js', 'public/app.js', 'public/index.html', 'render.yaml', '.env.example', 'RENDER_DEPLOY.md']) {
+  for (const rel of ['server.js', 'public/app.js', 'public/index.html', 'render.yaml', '.env.example', 'RENDER_DEPLOY.md', 'README.md']) {
     const text = await fs.readFile(path.join(root, rel), 'utf8');
     assert.doesNotMatch(text, /GEMINI_API_KEY|GEMINI_MODEL|generativelanguage\.googleapis\.com/);
   }
   const backend = await fs.readFile(path.join(root, 'server.js'), 'utf8');
   assert.match(backend, /api\.featherless\.ai\/v1/);
   assert.match(backend, /Authorization': `Bearer \$\{apiKey\}`/);
+  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');
+  assert.equal((envExample.match(/^FEATHERLESS_API_KEY=/gm) || []).length, 1);
+  assert.doesNotMatch(envExample, /FEATHERLESS_MODEL/);
 });
 """
 s += insert
 p.write_text(s)
-print('Adapted regression suite for Featherless.')
+print('Adapted regression suite for one-key Featherless auto-routing.')
