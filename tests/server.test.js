@@ -566,9 +566,9 @@ test('PWA cache and frontend script version stay synchronized', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
-  assert.match(html, /app\.js\?v=0\.14\.6/);
-  assert.match(sw, /cleanup-v0\.14\.6/);
-  assert.match(sw, /app\.js\?v=0\.14\.6/);
+  assert.match(html, /app\.js\?v=0\.14\.7/);
+  assert.match(sw, /cleanup-v0\.14\.7/);
+  assert.match(sw, /app\.js\?v=0\.14\.7/);
 });
 
 test('new analysis attempts clear stale results before network work begins', async () => {
@@ -1017,7 +1017,7 @@ test('service worker never caches API routes and respects no-store', async () =>
   const sw = await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /no-store/);
-  assert.match(sw, /cleanup-v0\.14\.6/);
+  assert.match(sw, /cleanup-v0\.14\.7/);
 });
 
 test('Render Blueprint generates receipt secret and wires global AI budget', async () => {
@@ -1176,16 +1176,16 @@ test('mobile CSS includes safe-area bottom padding and does not ellipsize AI sta
   assert.match(css,/\.status-pill \{ max-width:none; white-space:normal; overflow:visible; text-overflow:clip/);
 });
 
-test('manifest and shell asset versions are synchronized to 0.14.6', async () => {
+test('manifest and shell asset versions are synchronized to 0.14.7', async () => {
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const html=await fs.readFile(path.join(root,'public','index.html'),'utf8');
   const sw=await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   const manifest=JSON.parse(await fs.readFile(path.join(root,'public','manifest.webmanifest'),'utf8'));
-  assert.match(html,/styles\.css\?v=0\.14\.6/);
-  assert.match(html,/manifest\.webmanifest\?v=0\.14\.6/);
-  assert.match(sw,/styles\.css\?v=0\.14\.6/);
+  assert.match(html,/styles\.css\?v=0\.14\.7/);
+  assert.match(html,/manifest\.webmanifest\?v=0\.14\.7/);
+  assert.match(sw,/styles\.css\?v=0\.14\.7/);
   assert.equal(manifest.id,'/?source=pwa');
-  assert.match(manifest.icons[0].src,/v=0\.14\.6/);
+  assert.match(manifest.icons[0].src,/v=0\.14\.7/);
 });
 
 test('battery routing requires explicit battery acceptance rather than generic electronics', () => {
@@ -1347,7 +1347,7 @@ test('repository baseline includes complete cleanup history documents without ra
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const changelog=await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8');
   const history=await fs.readFile(path.join(root,'docs','PROJECT_HISTORY.md'),'utf8');
-  assert.match(changelog,/0\.14\.6/);
+  assert.match(changelog,/0\.14\.7/);
   assert.match(history,/changed combined `cleanup` implementation/);
   assert.match(history,/does not contain the raw Android\/web reference repositories/);
 });
@@ -1618,4 +1618,27 @@ test('waiting tabs re-read action state and do not mint duplicate stored proofs'
   assert.match(frontend, /snapshot\.completionReceipt[\s\S]{0,160}already has a stored server attestation/);
   assert.match(frontend, /storedActionIsValid\(found\)&&!found\.planReceipt/);
   assert.match(frontend, /storedActionIsValid\(found\)&&!found\.completionReceipt/);
+});
+
+
+test('full action creation is serialized across tabs before any plan proof is requested', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  const block = frontend.match(/\$\('pickupForm'\)\.addEventListener\('submit'[\s\S]*?\n\}\);\n\nfunction proofDetailsMatchRecord/)?.[0] || '';
+  const lockIndex = block.indexOf('withStorageLock(`action-create:${fingerprint}`');
+  const recentIndex = block.indexOf('const recent=storage.getArray(STORAGE_ACTIONS)');
+  const proofIndex = block.indexOf('record.planReceipt=await requestPlanProof(record)');
+  assert.ok(lockIndex >= 0 && recentIndex > lockIndex && proofIndex > recentIndex);
+  assert.match(block, /possibly in another tab/);
+});
+
+test('action creation stamps createdAt after a potentially slow proof request', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  const block = frontend.match(/\$\('pickupForm'\)\.addEventListener\('submit'[\s\S]*?\n\}\);\n\nfunction proofDetailsMatchRecord/)?.[0] || '';
+  assert.match(block, /createdAt:''/);
+  const proofIndex = block.indexOf('record.planReceipt=await requestPlanProof(record)');
+  const stampIndex = block.indexOf('record.createdAt=new Date().toISOString()');
+  const writeIndex = block.indexOf('mutateStoredArray(STORAGE_ACTIONS');
+  assert.ok(proofIndex >= 0 && stampIndex > proofIndex && writeIndex > stampIndex);
 });

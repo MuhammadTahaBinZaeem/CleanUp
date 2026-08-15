@@ -2,6 +2,13 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 0.14.7 — Cross-tab action-creation serialization
+
+- The full action-create flow now holds a fingerprint-specific Web Lock across duplicate recheck, optional server plan-proof request, and local insertion where browser locks are available.
+- A second tab waiting to create the same action now rechecks history before requesting a duplicate server proof.
+- `createdAt` is stamped immediately before insertion rather than before a potentially slow proof request, so a slow network call cannot age the first action out of the 10-second duplicate window before the waiting tab runs.
+- PWA/server cache identity bumped to 0.14.7.
+
 ## 0.14.6 — Cross-tab proof-operation serialization
 
 - Plan-proof retry, completion, and completion-attestation retry now hold a shared per-action browser lock across the full read → server request → local write operation when Web Locks are available.

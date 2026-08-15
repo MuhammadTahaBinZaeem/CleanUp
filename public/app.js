@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const APP_VERSION = '0.14.6';
+const APP_VERSION = '0.14.7';
 const STORAGE_SCANS = 'cleanup_scans';
 const STORAGE_ACTIONS = 'cleanup_actions';
 const MAX_SELECTED_FILE_BYTES = 30 * 1024 * 1024;
@@ -1068,7 +1068,7 @@ $('pickupForm').addEventListener('submit', async (event) => {
     id:marker,marker,action,material:boundedText(item.material||item.name,160),itemName:boundedText(item.name,160),wasteType:boundedText(item.waste_type,40,'unknown'),
     specialHandling:item.special_handling===true,facilityId:boundedText(facility?.id,120)||null,facilityName:boundedText(facility?.name,160)||(action==='pickup'?'Demo pickup — no logistics provider connected':null),
     facilitySource:boundedText(facility?.source,80)||null,compatibility:compatibilityStatus(facility)||null,weight:Number(weight.toFixed(3)),
-    date:$('pickupDate').value,time:$('pickupTime').value,plannedAtIso,note:boundedText($('pickupNote').value,300),status:'planned',isDemo,createdAt:new Date().toISOString(),
+    date:$('pickupDate').value,time:$('pickupTime').value,plannedAtIso,note:boundedText($('pickupNote').value,300),status:'planned',isDemo,createdAt:'',
     facilityProof:selectedFacilityHasProof(facility)?facility.facility_proof:'',planReceipt:'',completionReceipt:'',serverAttestedAt:''
   };
   const eligible=!isDemo&&action==='dropoff'&&Boolean(record.facilityProof);
@@ -1076,27 +1076,31 @@ $('pickupForm').addEventListener('submit', async (event) => {
   if (state.actionLocks.has(fingerprint)) return;
   state.actionLocks.add(fingerprint); if (submitButton) submitButton.disabled=true;
   try {
-    const recent=storage.getArray(STORAGE_ACTIONS).some((existing)=>recordFingerprint(existing)===fingerprint&&Date.now()-Date.parse(existing.createdAt||0)<10_000);
-    if (recent) { $('pickupMessage').textContent='That same action was just saved already.'; return; }
-    if (eligible) {
-      try { record.planReceipt=await requestPlanProof(record); record.proofState='planned-proof'; }
-      catch (error) { record.proofState='plan-missing'; record.proofError=boundedText(error.message,220); }
-    } else record.proofState=isDemo?'demo':'not-eligible';
-    let inserted=false;
-    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{
-      const duplicate=all.some((existing)=>recordFingerprint(existing)===fingerprint&&Date.now()-Date.parse(existing.createdAt||0)<10_000);
-      if (duplicate) return all;
-      inserted=true;
-      return [record,...all].slice(0,100);
+    await withStorageLock(`action-create:${fingerprint}`, async () => {
+      const recent=storage.getArray(STORAGE_ACTIONS).some((existing)=>recordFingerprint(existing)===fingerprint&&Date.now()-Date.parse(existing.createdAt||0)<10_000);
+      if (recent) { $('pickupMessage').textContent='That same action was just saved already, possibly in another tab.'; renderActions(); return; }
+      if (eligible) {
+        try { record.planReceipt=await requestPlanProof(record); record.proofState='planned-proof'; }
+        catch (error) { record.proofState='plan-missing'; record.proofError=boundedText(error.message,220); }
+      } else record.proofState=isDemo?'demo':'not-eligible';
+      // Stamp insertion time after any slow proof request so a waiting tab cannot age out of the duplicate window.
+      record.createdAt=new Date().toISOString();
+      let inserted=false;
+      const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{
+        const duplicate=all.some((existing)=>recordFingerprint(existing)===fingerprint&&Date.now()-Date.parse(existing.createdAt||0)<10_000);
+        if (duplicate) return all;
+        inserted=true;
+        return [record,...all].slice(0,100);
+      });
+      if (!saved) { $('pickupMessage').textContent='Could not save this action in browser storage. Check private-mode/storage settings and try again.'; return; }
+      if (!inserted) { $('pickupMessage').textContent='That same action was just saved already, possibly in another tab.'; renderActions(); return; }
+      $('pickupWeight').value=''; $('pickupNote').value='';
+      $('pickupMessage').textContent=isDemo?'Saved as a demo action. Demo actions never count toward attested impact.'
+        :record.planReceipt?'Action saved with a server-signed pre-action plan.'
+        :eligible?'Action saved, but the pre-action proof could not be created. Retry it before the scheduled time.'
+        :'Action saved locally. This destination does not have a signed published-material match, so it cannot count as server-attested impact.';
+      renderActions(); await renderImpact();
     });
-    if (!saved) { $('pickupMessage').textContent='Could not save this action in browser storage. Check private-mode/storage settings and try again.'; return; }
-    if (!inserted) { $('pickupMessage').textContent='That same action was just saved already, possibly in another tab.'; renderActions(); return; }
-    $('pickupWeight').value=''; $('pickupNote').value='';
-    $('pickupMessage').textContent=isDemo?'Saved as a demo action. Demo actions never count toward attested impact.'
-      :record.planReceipt?'Action saved with a server-signed pre-action plan.'
-      :eligible?'Action saved, but the pre-action proof could not be created. Retry it before the scheduled time.'
-      :'Action saved locally. This destination does not have a signed published-material match, so it cannot count as server-attested impact.';
-    renderActions(); await renderImpact();
   } finally { state.actionLocks.delete(fingerprint); if (submitButton) submitButton.disabled=false; }
 });
 
