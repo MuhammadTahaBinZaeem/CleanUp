@@ -2,6 +2,15 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 0.14.4 — Multi-tab history and mutation correctness
+
+- Scan-history writes now use the same Web Locks-backed storage mutation path as action history, preventing concurrent tabs from overwriting each other where browser locks are available.
+- Duplicate-action detection is repeated inside the storage lock so simultaneous tabs cannot both insert the same action.
+- Plan-proof and completion-proof retry flows now distinguish server success from localStorage success and detect records changed by another tab mid-request.
+- Completion writes now detect concurrent no-ops instead of reporting a successful local update that was never stored.
+- Local action validation now rejects unknown statuses and requires completed records to carry a canonical completion timestamp at or after the planned time.
+- PWA/server cache identity bumped to 0.14.4.
+
 ## 0.14.3 — Privacy, proof persistence, and offline upgrade safety
 
 - Legacy GET address/facility lookup routes now return 405; typed addresses, coordinates, and signed item proofs stay in POST JSON bodies instead of URLs.

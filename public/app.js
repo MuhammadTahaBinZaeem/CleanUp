@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const APP_VERSION = '0.14.3';
+const APP_VERSION = '0.14.4';
 const STORAGE_SCANS = 'cleanup_scans';
 const STORAGE_ACTIONS = 'cleanup_actions';
 const MAX_SELECTED_FILE_BYTES = 30 * 1024 * 1024;
@@ -490,7 +490,7 @@ $('analyzeBtn').addEventListener('click', async () => {
       signal: controller.signal
     }, 65000);
     if (generation !== state.analyzeGeneration) return;
-    const applied = setAnalysis(payload.result, false);
+    const applied = await setAnalysis(payload.result, false);
     if (applied && !$('scanMessage').textContent.includes('could not save')) $('scanMessage').textContent = `Analyzed with ${state.analysis.ai_model || 'Gemini'}. Choose an item to find disposal options.`;
   } catch (error) {
     if (generation !== state.analyzeGeneration || error.code === 'REQUEST_CANCELLED') return;
@@ -516,11 +516,11 @@ $('demoBtn').addEventListener('click', async () => {
   try {
     const payload = await fetchJson('/api/demo-analysis', { method: 'POST' }, 8000);
     if (generation !== state.analyzeGeneration) return;
-    const applied = setAnalysis(payload.result, true);
+    const applied = await setAnalysis(payload.result, true);
     if (applied && !$('scanMessage').textContent.includes('could not save')) $('scanMessage').textContent = 'Demo result loaded. Demo scans do not count toward impact.';
   } catch (error) {
     if (generation !== state.analyzeGeneration) return;
-    const applied = setAnalysis(typeof structuredClone === 'function' ? structuredClone(LOCAL_DEMO_RESULT) : JSON.parse(JSON.stringify(LOCAL_DEMO_RESULT)), true);
+    const applied = await setAnalysis(typeof structuredClone === 'function' ? structuredClone(LOCAL_DEMO_RESULT) : JSON.parse(JSON.stringify(LOCAL_DEMO_RESULT)), true);
     if (applied && !$('scanMessage').textContent.includes('could not save')) $('scanMessage').textContent = 'Local demo loaded because the server is unavailable. Demo data does not count toward impact.';
   } finally {
     if (generation === state.analyzeGeneration) {
@@ -554,7 +554,7 @@ function normalizeAnalysisPayload(result) {
   return { scene_summary:typeof result.scene_summary==='string'?result.scene_summary.slice(0,500):'Waste analysis', user_warning:typeof result.user_warning==='string'?result.user_warning.slice(0,500):'', ai_model:typeof result.ai_model==='string'?result.ai_model.slice(0,160):'Gemini', items };
 }
 
-function setAnalysis(result, demo) {
+async function setAnalysis(result, demo) {
   setBusy('resultsPanel', false);
   const normalized = normalizeAnalysisPayload(result);
   if (!normalized || !normalized.items.length) {
@@ -565,9 +565,8 @@ function setAnalysis(result, demo) {
     return false;
   }
   state.analysis = normalized; state.analysisIsDemo = Boolean(demo); state.selectedItemIndex = null; state.facilities=[]; state.selectedFacilityId=null;
-  const scans = storage.getArray(STORAGE_SCANS);
-  scans.unshift({ id:uid(), at:new Date().toISOString(), demo:Boolean(demo), items:normalized.items.map((item)=>({name:item.name, material:item.material, waste_type:item.waste_type})) });
-  const saved = storage.set(STORAGE_SCANS, scans.slice(0,50));
+  const scan = { id:uid(), at:new Date().toISOString(), demo:Boolean(demo), items:normalized.items.map((item)=>({name:item.name, material:item.material, waste_type:item.waste_type})) };
+  const saved = await mutateStoredArray(STORAGE_SCANS, (scans) => [scan, ...scans].slice(0,50));
   renderAnalysis(); selectItem(0,{searchIfPossible:false}); renderImpact();
   if (!saved) $('scanMessage').textContent = 'Analysis ready, but this browser could not save scan history.';
   return true;
@@ -1016,9 +1015,15 @@ function recordFingerprint(record) {
 function scheduledDateTime(record) { const iso=recordPlannedIso(record); return iso?new Date(iso):null; }
 function storedActionIsValid(record) {
   const action = record?.action;
-  if (typeof record?.isDemo !== 'boolean' || !['dropoff','pickup'].includes(action)) return false;
-  if (!recordMarker(record) || !recordPlannedIso(record) || !strictStoredWeight(record?.weight)) return false;
+  const status = record?.status;
+  if (typeof record?.isDemo !== 'boolean' || !['dropoff','pickup'].includes(action) || !['planned','completed'].includes(status)) return false;
+  const plannedAt = recordPlannedIso(record);
+  if (!recordMarker(record) || !plannedAt || !strictStoredWeight(record?.weight)) return false;
   if (!boundedText(record?.itemName || record?.material, 160)) return false;
+  if (status === 'completed') {
+    const completedAt = canonicalIso(record?.completedAt);
+    if (!completedAt || Date.parse(completedAt) < Date.parse(plannedAt) || Date.parse(completedAt) > Date.now() + 5 * 60_000) return false;
+  }
   if (action === 'pickup') return record.isDemo === true;
   return Boolean(boundedText(record?.facilityId, 120) && boundedText(record?.facilityName, 160));
 }
@@ -1074,8 +1079,15 @@ $('pickupForm').addEventListener('submit', async (event) => {
       try { record.planReceipt=await requestPlanProof(record); record.proofState='planned-proof'; }
       catch (error) { record.proofState='plan-missing'; record.proofError=boundedText(error.message,220); }
     } else record.proofState=isDemo?'demo':'not-eligible';
-    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>[record,...all].slice(0,100));
+    let inserted=false;
+    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{
+      const duplicate=all.some((existing)=>recordFingerprint(existing)===fingerprint&&Date.now()-Date.parse(existing.createdAt||0)<10_000);
+      if (duplicate) return all;
+      inserted=true;
+      return [record,...all].slice(0,100);
+    });
     if (!saved) { $('pickupMessage').textContent='Could not save this action in browser storage. Check private-mode/storage settings and try again.'; return; }
+    if (!inserted) { $('pickupMessage').textContent='That same action was just saved already, possibly in another tab.'; renderActions(); return; }
     $('pickupWeight').value=''; $('pickupNote').value='';
     $('pickupMessage').textContent=isDemo?'Saved as a demo action. Demo actions never count toward attested impact.'
       :record.planReceipt?'Action saved with a server-signed pre-action plan.'
@@ -1158,7 +1170,10 @@ async function retryPlanProof(marker) {
     if (!snapshot.facilityProof) { $('pickupMessage').textContent='Search the facility again to obtain a fresh matched proof.'; return; }
     if (Date.parse(recordPlannedIso(snapshot)||0)<Date.now()-60_000) { $('pickupMessage').textContent='The scheduled time has passed; a pre-action proof cannot be created retroactively.'; return; }
     const receipt=await requestPlanProof(snapshot);
-    await mutateStoredArray(STORAGE_ACTIONS,(all)=>{ const found=all.find((r)=>recordMarker(r)===marker); if(found&&found.status!=='completed') {found.planReceipt=receipt;found.proofState='planned-proof';found.proofError='';} return all; });
+    let updated=false;
+    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{ const found=all.find((r)=>recordMarker(r)===marker); if(found&&found.status==='planned'&&storedActionIsValid(found)) {found.planReceipt=receipt;found.proofState='planned-proof';found.proofError='';updated=true;} return all; });
+    if(!saved){$('pickupMessage').textContent='The proof was created, but browser storage could not save it. Check storage settings and retry.';return;}
+    if(!updated){$('pickupMessage').textContent='This action changed in another tab before the proof could be stored.';renderActions();return;}
     $('pickupMessage').textContent='Pre-action server proof stored.'; renderActions();
   } catch(error) { $('pickupMessage').textContent=error.message; }
   finally { state.actionLocks.delete(`plan:${marker}`); }
@@ -1187,8 +1202,10 @@ async function completeRecord(marker) {
     if (snapshot.planReceipt) { try { proof=await obtainCompletionReceipt(snapshot); } catch(error) { proofError=boundedText(error.message,220); proofErrorCode=boundedText(error.code,60); } }
     const proofPermanent = proofErrorCode === 'BAD_PLAN_RECEIPT';
     const completedAt=new Date().toISOString();
-    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{ const found=all.find((r)=>recordMarker(r)===marker); if(!found||found.status==='completed')return all; found.status='completed';found.completedAt=completedAt;if(proof){found.completionReceipt=proof.receipt;found.serverAttestedAt=proof.completedAt;found.proofError='';found.proofErrorCode='';}else if(proofError){found.proofError=proofError;found.proofErrorCode=proofErrorCode;if(proofPermanent)found.proofState='completion-unavailable';} return all; });
+    let updated=false;
+    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{ const found=all.find((r)=>recordMarker(r)===marker); if(!found||found.status!=='planned'||!storedActionIsValid(found))return all; found.status='completed';found.completedAt=completedAt;if(proof){found.completionReceipt=proof.receipt;found.serverAttestedAt=proof.completedAt;found.proofError='';found.proofErrorCode='';}else if(proofError){found.proofError=proofError;found.proofErrorCode=proofErrorCode;if(proofPermanent)found.proofState='completion-unavailable';}updated=true; return all; });
     if(!saved){$('pickupMessage').textContent='Could not update local history.';return;}
+    if(!updated){$('pickupMessage').textContent='This action changed in another tab before completion could be saved.';renderImpact();return;}
     $('pickupMessage').textContent=proof?'Completion recorded and server-attested.' : proofPermanent?'Completion recorded locally. The original pre-action proof is expired or invalid, so this completion cannot be retroactively server-attested.' : snapshot.planReceipt?'Completion recorded locally; server attestation failed. You can retry attestation.' : 'Completion recorded locally. No pre-action proof existed, so this completion cannot be retroactively server-attested.';
     renderActions(); await renderImpact();
   } finally { state.actionLocks.delete(`complete:${marker}`); }
@@ -1201,7 +1218,10 @@ async function retryCompletionProof(marker) {
     if(!storedActionIsValid(snapshot) || snapshot.action!=='dropoff' || snapshot.isDemo===true){$('pickupMessage').textContent='This saved action is invalid or demo-only and cannot be server-attested.';renderActions();return;}
     if(!snapshot.planReceipt){$('pickupMessage').textContent='No pre-action proof exists. This completion cannot be retroactively server-attested.';return;}
     const proof=await obtainCompletionReceipt(snapshot);
-    await mutateStoredArray(STORAGE_ACTIONS,(all)=>{const found=all.find((r)=>recordMarker(r)===marker);if(found&&found.status==='completed'){found.completionReceipt=proof.receipt;found.serverAttestedAt=proof.completedAt;found.proofError='';}return all;});
+    let updated=false;
+    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{const found=all.find((r)=>recordMarker(r)===marker);if(found&&found.status==='completed'&&storedActionIsValid(found)){found.completionReceipt=proof.receipt;found.serverAttestedAt=proof.completedAt;found.proofError='';found.proofErrorCode='';updated=true;}return all;});
+    if(!saved){$('pickupMessage').textContent='Server attestation succeeded, but browser storage could not save the receipt.';return;}
+    if(!updated){$('pickupMessage').textContent='This action changed in another tab before the attestation could be stored.';renderImpact();return;}
     $('pickupMessage').textContent='Server attestation recovered.';renderActions();await renderImpact();
   }catch(error){
     if(error.code==='BAD_PLAN_RECEIPT'){

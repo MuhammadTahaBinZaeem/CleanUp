@@ -566,9 +566,9 @@ test('PWA cache and frontend script version stay synchronized', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
-  assert.match(html, /app\.js\?v=0\.14\.3/);
-  assert.match(sw, /cleanup-v0\.14\.3/);
-  assert.match(sw, /app\.js\?v=0\.14\.3/);
+  assert.match(html, /app\.js\?v=0\.14\.4/);
+  assert.match(sw, /cleanup-v0\.14\.4/);
+  assert.match(sw, /app\.js\?v=0\.14\.4/);
 });
 
 test('new analysis attempts clear stale results before network work begins', async () => {
@@ -1017,7 +1017,7 @@ test('service worker never caches API routes and respects no-store', async () =>
   const sw = await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /no-store/);
-  assert.match(sw, /cleanup-v0\.14\.3/);
+  assert.match(sw, /cleanup-v0\.14\.4/);
 });
 
 test('Render Blueprint generates receipt secret and wires global AI budget', async () => {
@@ -1176,16 +1176,16 @@ test('mobile CSS includes safe-area bottom padding and does not ellipsize AI sta
   assert.match(css,/\.status-pill \{ max-width:none; white-space:normal; overflow:visible; text-overflow:clip/);
 });
 
-test('manifest and shell asset versions are synchronized to 0.14.3', async () => {
+test('manifest and shell asset versions are synchronized to 0.14.4', async () => {
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const html=await fs.readFile(path.join(root,'public','index.html'),'utf8');
   const sw=await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   const manifest=JSON.parse(await fs.readFile(path.join(root,'public','manifest.webmanifest'),'utf8'));
-  assert.match(html,/styles\.css\?v=0\.14\.3/);
-  assert.match(html,/manifest\.webmanifest\?v=0\.14\.3/);
-  assert.match(sw,/styles\.css\?v=0\.14\.3/);
+  assert.match(html,/styles\.css\?v=0\.14\.4/);
+  assert.match(html,/manifest\.webmanifest\?v=0\.14\.4/);
+  assert.match(sw,/styles\.css\?v=0\.14\.4/);
   assert.equal(manifest.id,'/?source=pwa');
-  assert.match(manifest.icons[0].src,/v=0\.14\.3/);
+  assert.match(manifest.icons[0].src,/v=0\.14\.4/);
 });
 
 test('battery routing requires explicit battery acceptance rather than generic electronics', () => {
@@ -1347,7 +1347,7 @@ test('repository baseline includes complete cleanup history documents without ra
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const changelog=await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8');
   const history=await fs.readFile(path.join(root,'docs','PROJECT_HISTORY.md'),'utf8');
-  assert.match(changelog,/0\.14\.3/);
+  assert.match(changelog,/0\.14\.4/);
   assert.match(history,/changed combined `cleanup` implementation/);
   assert.match(history,/does not contain the raw Android\/web reference repositories/);
 });
@@ -1529,4 +1529,41 @@ test('service worker fails a broken core install and deletes only cleanup-owned 
   assert.match(sw, /cache\.addAll\(CORE\)\)\);/);
   assert.doesNotMatch(sw, /cache\.addAll\(CORE\)\)\.catch/);
   assert.match(sw, /key\.startsWith\('cleanup-v'\)&&key!==CACHE/);
+});
+
+
+test('scan history writes use the browser storage lock instead of an unlocked get-set pair', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /async function setAnalysis\(result, demo\)/);
+  assert.match(frontend, /mutateStoredArray\(STORAGE_SCANS,[\s\S]{0,220}\[scan, \.\.\.scans\]/);
+  assert.doesNotMatch(frontend, /const scans = storage\.getArray\(STORAGE_SCANS\);[\s\S]{0,220}storage\.set\(STORAGE_SCANS/);
+});
+
+test('action insertion repeats duplicate detection inside the storage lock', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /mutateStoredArray\(STORAGE_ACTIONS,[\s\S]{0,500}recordFingerprint\(existing\)===fingerprint[\s\S]{0,300}inserted=true/);
+  assert.match(frontend, /possibly in another tab/);
+});
+
+test('proof retry paths report whether browser storage actually accepted the receipt', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /const saved=await mutateStoredArray\(STORAGE_ACTIONS[\s\S]{0,500}proof was created, but browser storage could not save it/i);
+  assert.match(frontend, /Server attestation succeeded, but browser storage could not save the receipt/);
+  assert.match(frontend, /changed in another tab before the attestation could be stored/);
+});
+
+test('completed local records require valid status and a consistent completion timestamp', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /!\['planned','completed'\]\.includes\(status\)/);
+  assert.match(frontend, /status === 'completed'[\s\S]{0,350}completedAt[\s\S]{0,350}Date\.parse\(completedAt\) < Date\.parse\(plannedAt\)/);
+});
+
+test('completion mutation detects a concurrent no-op instead of claiming a local write succeeded', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /let updated=false;[\s\S]{0,800}found\.status!=='planned'[\s\S]{0,500}if\(!updated\)[\s\S]{0,180}changed in another tab before completion could be saved/);
 });
