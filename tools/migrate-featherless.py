@@ -16,6 +16,7 @@ def regex_once(text, pattern, repl, label):
 # Provider-wide rename in deployable source/tests/docs. Historical release notes are preserved.
 for p in ['server.js','public/app.js','public/index.html','tests/server.test.js','RENDER_DEPLOY.md','render.yaml','.env.example','README.md']:
     s=read(p).replace('GEMINI','FEATHERLESS').replace('Gemini','Featherless').replace('gemini','featherless')
+    s=s.replace('FEATHERLESS_MODEL_ACCESS_COOLDOWN_MS','FEATHERLESS_ACCESS_COOLDOWN_MS')
     write(p,s)
 
 s=read('server.js')
@@ -33,7 +34,7 @@ s=regex_once(s,r"function getFeatherlessConfig\(env = process\.env\) \{.*?\n\}",
   'google/gemma-4-31B-it'
 ]);
 function getFeatherlessConfig(env = process.env) {
-  const apiKey = String(env.FEATHERLESS_API_KEY || env.FEATHERLESS_API_KEY_1 || '').trim();
+  const apiKey = String(env.FEATHERLESS_API_KEY || '').trim();
   return { keys: apiKey ? [apiKey] : [], models: [...AUTO_FEATHERLESS_MODELS] };
 }''','getFeatherlessConfig')
 
@@ -111,7 +112,6 @@ async function analyzeWithFeatherless''','Featherless API call')
 s=s.replace("  const body = createFeatherlessRequestBody({ mimeType, data });\n",'')
 s=s.replace("  for (const model of models) {\n    if (unavailableFeatherlessModels.has(model)) continue;", "  for (const model of models) {\n    if (unavailableFeatherlessModels.has(model)) continue;\n    const body = createFeatherlessRequestBody({ mimeType, data, model });")
 s=s.replace("      if (attempt.kind === 'model') { unavailableFeatherlessModels.add(model); switchModel = true; break; }", "      if (attempt.kind === 'model') { unavailableFeatherlessModels.add(model); switchModel = true; break; }\n      if (attempt.kind === 'model-cold') { switchModel = true; break; }")
-s=s.replace("if (!keys.length) { const error = new Error('Featherless is not configured on this deployment'); error.code = 'NO_FEATHERLESS_KEY'; error.status = 503; throw error; }", "if (!keys.length) { const error = new Error('Featherless is not configured on this deployment'); error.code = 'NO_FEATHERLESS_KEY'; error.status = 503; throw error; }")
 
 # Export request-builder for contract tests.
 s=s.replace('normalizeWasteResult, scoreFacilityCompatibility, getFeatherlessConfig, normalizeModelName, featherlessFailureKind,', 'normalizeWasteResult, scoreFacilityCompatibility, getFeatherlessConfig, normalizeModelName, featherlessFailureKind, createFeatherlessRequestBody,')
@@ -121,6 +121,11 @@ write('server.js',s)
 for p in ['package.json','package-lock.json','public/app.js','public/index.html','public/sw.js','public/manifest.webmanifest','RENDER_DEPLOY.md']:
     s=read(p).replace('0.14.9','1.0.0')
     write(p,s)
+
+# Keep the UI provider-agnostic: no user model selection or model-name status display.
+app=read('public/app.js')
+app=app.replace("    const model = typeof data.model === 'string' && data.model ? data.model : usableModels[0];\n    const suffix = usable > 1 ? ` · ${usable} keys` : '';\n    $('aiStatus').textContent = `AI ready · ${model}${suffix}`;", "    $('aiStatus').textContent = 'AI ready · automatic routing';")
+write('public/app.js',app)
 
 # One-key deployment configuration. Model choice is automatic and intentionally absent from env/Render config.
 env=read('.env.example')
@@ -149,13 +154,13 @@ All Featherless credentials stay on the server. You configure **one key only**:
 FEATHERLESS_API_KEY=your_key_here
 ```
 
-There is no model setting in the user or Render configuration. cleanup automatically routes each scan through its internal ordered pool of vision-capable Featherless models and falls back when a model is cold, unavailable, inaccessible, rate-limited, or temporarily failing. The exact model that succeeds can still be reported for debugging, but you never have to choose it.
+There is no model setting in the app or Render configuration. cleanup automatically routes each scan through an internal pool of vision-capable Featherless models and falls back when a route is cold, unavailable, inaccessible, rate-limited, or temporarily failing. The UI simply reports that automatic routing is ready; you never choose a model.
 
 ## Local setup''', readme, count=1, flags=re.S)
 readme=readme.replace('Up to **3 Featherless API keys** with rotation/failover.','One server-side **Featherless API key**.')
 readme=readme.replace('Up to **3 configurable Featherless model names** with model fallback.','Automatic internal routing across multiple vision-capable Featherless models.')
-readme=readme.replace('Without a Featherless key,','Without a Featherless key,')
 readme=readme.replace('- three optional Featherless key slots\n- three configurable model slots','- one Featherless API key slot\n- automatic internal vision-model routing')
+readme=readme.replace('configured/usable route counts and model priority','configured/usable route counts')
 write('README.md',readme)
 
 deploy=read('RENDER_DEPLOY.md')
@@ -169,7 +174,7 @@ write('RENDER_DEPLOY.md',deploy)
 changelog=read('CHANGELOG.md')
 if '## 1.0.0 — Featherless automatic vision routing' not in changelog:
     marker='All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.\n'
-    entry='''\n## 1.0.0 — Featherless automatic vision routing\n\n- Replaced the Gemini runtime with Featherless's OpenAI-compatible vision API.\n- Deployment now needs exactly one `FEATHERLESS_API_KEY`; users do not configure model names.\n- cleanup automatically routes across an internal pool of vision-capable Featherless models and falls back on cold, unavailable, access-limited, quota-limited, or transient routes.\n- Preserved deterministic hazardous-waste overrides, signed action proofs, facility matching, impact verification, rate limits, PWA behavior, and all prior safety boundaries.\n- Synchronized the application, manifest, service-worker, Render deployment and tests to `1.0.0`.\n'''
+    entry='''\n## 1.0.0 — Featherless automatic vision routing\n\n- Replaced the Gemini runtime with Featherless's OpenAI-compatible vision API.\n- Deployment now needs exactly one `FEATHERLESS_API_KEY`; users do not configure model names.\n- cleanup automatically routes across an internal pool of vision-capable Featherless models and falls back on cold, unavailable, access-limited, quota-limited, or transient routes.\n- The frontend reports only automatic-routing readiness rather than exposing model selection controls.\n- Preserved deterministic hazardous-waste overrides, signed action proofs, facility matching, impact verification, rate limits, PWA behavior, and all prior safety boundaries.\n- Synchronized the application, manifest, service-worker, Render deployment and tests to `1.0.0`.\n'''
     changelog=changelog.replace(marker, marker+entry)
 write('CHANGELOG.md',changelog)
 
