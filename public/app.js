@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const APP_VERSION = '0.14.0';
+const APP_VERSION = '0.14.1';
 const STORAGE_SCANS = 'cleanup_scans';
 const STORAGE_ACTIONS = 'cleanup_actions';
 const MAX_SELECTED_FILE_BYTES = 30 * 1024 * 1024;
@@ -30,7 +30,9 @@ const state = {
   impactController: null,
   actionLocks: new Set(),
   healthRetryTimer: null,
-  healthRetryAttempt: 0
+  healthRetryAttempt: 0,
+  healthGeneration: 0,
+  healthController: null
 };
 
 const LOCAL_DEMO_RESULT = {
@@ -170,9 +172,15 @@ function scheduleHealthRetry() {
   }, delay);
 }
 async function health() {
+  const generation = ++state.healthGeneration;
+  state.healthController?.abort();
+  state.healthController = null;
   if (navigator.onLine === false) { clearHealthRetry(); $('aiStatus').textContent = 'Offline · saved history available'; return; }
+  const controller = new AbortController();
+  state.healthController = controller;
   try {
-    const data = await fetchJson('/api/health', {}, 8000);
+    const data = await fetchJson('/api/health', { signal: controller.signal }, 8000);
+    if (generation !== state.healthGeneration) return;
     const configured = data?.geminiConfigured === true;
     const usable = Number.isInteger(data?.usableKeyCount) && data.usableKeyCount >= 0 ? data.usableKeyCount : 0;
     const usableModels = Array.isArray(data?.usableModels) ? data.usableModels.filter((m) => typeof m === 'string') : [];
@@ -184,9 +192,12 @@ async function health() {
     const model = typeof data.model === 'string' && data.model ? data.model : usableModels[0];
     const suffix = usable > 1 ? ` · ${usable} keys` : '';
     $('aiStatus').textContent = `AI ready · ${model}${suffix}`;
-  } catch {
+  } catch (error) {
+    if (generation !== state.healthGeneration || error.code === 'REQUEST_CANCELLED') return;
     $('aiStatus').textContent = navigator.onLine === false ? 'Offline · saved history available' : 'Server waking or unavailable';
     scheduleHealthRetry();
+  } finally {
+    if (generation === state.healthGeneration) state.healthController = null;
   }
 }
 function revokePreview() {
@@ -1086,6 +1097,7 @@ function safeHistoryRecord(record) {
     weight:strictStoredWeight(record?.weight),plannedAtIso:recordPlannedIso(record),date:boundedText(record?.date,10),time:boundedText(record?.time,5),status:record?.status==='completed'?'completed':'planned',
     action:record?.action==='pickup'?'pickup':'dropoff',isDemo:record?.isDemo===true,planReceipt:typeof record?.planReceipt==='string'?record.planReceipt.slice(0,20000):'',completionReceipt:typeof record?.completionReceipt==='string'?record.completionReceipt.slice(0,20000):'',
     serverAttestedAt:canonicalIso(record?.serverAttestedAt),facilityProof:typeof record?.facilityProof==='string'?record.facilityProof.slice(0,20000):'',
+    note:boundedText(record?.note,300),completedAt:canonicalIso(record?.completedAt),
     proofState:boundedText(record?.proofState,40),proofErrorCode:boundedText(record?.proofErrorCode,60),proofError:boundedText(record?.proofError,220),
     validRecord:typeof record?.isDemo==='boolean'&&['dropoff','pickup'].includes(record?.action)&&Boolean(recordPlannedIso(record))&&Boolean(recordMarker(record))
   };
@@ -1099,7 +1111,7 @@ function renderActions() {
   $('pickupHistory').innerHTML=actions.length?actions.map((raw)=>{
     const record={...raw,...safeHistoryRecord(raw)};
     return `<article class="history-card"><div><div class="history-title"><strong>${escapeHtml(record.itemName)}${record.weight?` · ${record.weight.toFixed(1)} kg`:''}</strong>${record.specialHandling?'<span class="danger-tag">Special handling</span>':''}${proofBadge(record)}</div>
-      <p>${record.action==='pickup'?'Demo pickup':'Drop-off'} · ${escapeHtml(record.facilityName)}</p><p>${escapeHtml(formatPlanned(record))} · ${record.status==='completed'?'Completed':'Planned'}</p>${record.proofError?`<p class="proof-error">${escapeHtml(record.proofError)}</p>`:''}</div>${completionControl(record)}</article>`;
+      <p>${record.action==='pickup'?'Demo pickup':'Drop-off'} · ${escapeHtml(record.facilityName)}</p><p>${escapeHtml(formatPlanned(record))} · ${record.status==='completed'?'Completed':'Planned'}</p>${record.note?`<p class="history-note">Note: ${escapeHtml(record.note)}</p>`:''}${record.proofError?`<p class="proof-error">${escapeHtml(record.proofError)}</p>`:''}</div>${completionControl(record)}</article>`;
   }).join(''):'<p class="muted">No actions saved yet.</p>';
   document.querySelectorAll('[data-complete]').forEach((b)=>b.addEventListener('click',()=>completeRecord(b.dataset.complete)));
   document.querySelectorAll('[data-retry-plan]').forEach((b)=>b.addEventListener('click',()=>retryPlanProof(b.dataset.retryPlan)));
@@ -1203,16 +1215,19 @@ setDefaultActionDate();
 syncActionMode();
 
 window.addEventListener('online', () => { state.healthRetryAttempt = 0; health(); renderImpact(); });
-window.addEventListener('offline', () => { clearHealthRetry(); $('aiStatus').textContent = 'Offline · saved history available'; });
+window.addEventListener('offline', () => { clearHealthRetry(); health(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { state.healthRetryAttempt = 0; health(); updateScheduleBounds(); renderImpact(); } });
 window.addEventListener('storage', (event) => {
   if (event.key === STORAGE_ACTIONS || event.key === STORAGE_SCANS) { renderActions(); renderImpact(); }
 });
-setInterval(() => { updateScheduleBounds(); if (document.visibilityState === 'visible') renderImpact(); }, 60_000);
+setInterval(() => { updateScheduleBounds(); if (document.visibilityState === 'visible') renderActions(); }, 60_000);
 window.addEventListener('beforeunload', () => {
   state.analyzeController?.abort();
   state.facilityController?.abort();
   state.locationController?.abort();
+  state.impactController?.abort();
+  state.healthController?.abort();
+  clearHealthRetry();
   revokePreview();
 });
 

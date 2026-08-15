@@ -13,6 +13,8 @@ services:
     envVars:
       - key: HOST
         value: 0.0.0.0
+      - key: NODE_ENV
+        value: production
       - key: GEMINI_MODEL_1
         value: gemini-3.6-flash
       - key: GEMINI_MODEL_2

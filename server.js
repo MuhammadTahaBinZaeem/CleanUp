@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PUBLIC_REAL_DIR = await fs.realpath(PUBLIC_DIR).catch(() => PUBLIC_DIR);
-const VERSION = '0.14.0';
+const VERSION = '0.14.1';
 
 async function loadDotEnv() {
   try {
@@ -782,15 +782,22 @@ async function analyzeWithGemini(input, { config = GEMINI_CONFIG, call = callGem
   const failures = [];
   const rejectedKeySlots = new Set();
   const startedAt = Date.now();
-  let skippedForCooldown = false;
+  let skippedQuotaCooldown = false;
+  let skippedAccessCooldown = false;
 
   for (const model of models) {
     if (unavailableGeminiModels.has(model)) continue;
     let switchModel = false;
     const usableSlots = orderedKeySlots(keys.length).filter((slot) => !rejectedKeySlots.has(slot) && !disabledGeminiKeys.has(keys[slot]));
     if (!usableSlots.length) { const error = new Error('All configured Gemini keys were rejected. Check the key values and API access.'); error.code = 'GEMINI_KEYS_REJECTED'; error.status = 502; throw error; }
-    const keySlots = usableSlots.filter((slot) => !geminiPairCoolingDown(keys[slot], model));
-    if (!keySlots.length) { skippedForCooldown = true; continue; }
+    const keySlots = usableSlots.filter((slot) => {
+      const quotaCooling = pairCoolingDown(geminiQuotaCooldowns, keys[slot], model);
+      const accessCooling = pairCoolingDown(geminiModelAccessCooldowns, keys[slot], model);
+      if (quotaCooling) skippedQuotaCooldown = true;
+      if (accessCooling) skippedAccessCooldown = true;
+      return !quotaCooling && !accessCooling;
+    });
+    if (!keySlots.length) continue;
 
     for (const keyIndex of keySlots) {
       if (signal?.aborted) { const error = new Error('Analysis request was cancelled'); error.code = 'REQUEST_CANCELLED'; error.status = 499; throw error; }
@@ -816,16 +823,26 @@ async function analyzeWithGemini(input, { config = GEMINI_CONFIG, call = callGem
 
   const allModelsUnavailable = models.length > 0 && models.every((model) => unavailableGeminiModels.has(model));
   if (allModelsUnavailable) { const error = new Error('All configured Gemini model names are unavailable. Check the model configuration.'); error.code = 'GEMINI_MODELS_UNAVAILABLE'; error.status = 502; throw error; }
-  const allQuota = failures.length > 0 && failures.every((failure) => failure.status === 429);
-  const allAccess = failures.length > 0 && failures.every((failure) => failure.kind === 'key-model-access');
-  const error = new Error(allQuota || (skippedForCooldown && !failures.length)
-    ? 'All configured Gemini key/model routes are temporarily cooling down after quota errors'
-    : allAccess ? 'All configured keys are temporarily blocked from the requested Gemini models'
-    : 'Gemini failed across all configured keys and models');
-  error.code = allQuota || skippedForCooldown ? 'GEMINI_QUOTA_EXHAUSTED' : allAccess ? 'GEMINI_MODEL_ACCESS_EXHAUSTED' : 'GEMINI_FAILOVER_EXHAUSTED';
-  error.status = allQuota || skippedForCooldown ? 429 : 502;
+  const exhaustion = geminiExhaustionFailure(failures, { skippedQuotaCooldown, skippedAccessCooldown });
+  const error = new Error(exhaustion.message);
+  error.code = exhaustion.code;
+  error.status = exhaustion.status;
   error.attempts = failures.length;
   throw error;
+}
+function geminiExhaustionFailure(failures = [], { skippedQuotaCooldown = false, skippedAccessCooldown = false } = {}) {
+  const allQuota = failures.length > 0 && failures.every((failure) => failure.kind === 'key-or-quota');
+  const allAccess = failures.length > 0 && failures.every((failure) => failure.kind === 'key-model-access');
+  if (allQuota || (!failures.length && skippedQuotaCooldown && !skippedAccessCooldown)) {
+    return { message: 'All configured Gemini key/model routes are temporarily cooling down after quota errors', code: 'GEMINI_QUOTA_EXHAUSTED', status: 429 };
+  }
+  if (allAccess || (!failures.length && skippedAccessCooldown && !skippedQuotaCooldown)) {
+    return { message: 'All configured keys are temporarily blocked from the requested Gemini models', code: 'GEMINI_MODEL_ACCESS_EXHAUSTED', status: 502 };
+  }
+  if (!failures.length && skippedQuotaCooldown && skippedAccessCooldown) {
+    return { message: 'All configured Gemini routes are temporarily unavailable due to quota or model-access cooldowns', code: 'GEMINI_ROUTES_COOLDOWN', status: 503 };
+  }
+  return { message: 'Gemini failed across all configured keys and models', code: 'GEMINI_FAILOVER_EXHAUSTED', status: 502 };
 }
 function haversineKm(lat1, lon1, lat2, lon2) {
   const toRad = (n) => n * Math.PI / 180;
@@ -1394,7 +1411,7 @@ if (isMain) {
 export {
   server, createRateLimiter, decodedBase64Bytes, imageSignatureMatches, expandedWantedTags, haversineKm,
   normalizeWasteResult, scoreFacilityCompatibility, getGeminiConfig, normalizeModelName, geminiFailureKind,
-  orderedKeySlots, analyzeWithGemini, materialPhrasesMatch, strictBoolean, deterministicSafetySteps,
+  orderedKeySlots, analyzeWithGemini, geminiExhaustionFailure, materialPhrasesMatch, strictBoolean, deterministicSafetySteps,
   deterministicSafetyExplanation, deterministicFacilityTags, createSerialGate, validCoordinates, demoFacilities,
   finiteNumber, browserApiRequestAllowed, validateAnalysisImageInput, rankFacilities, normalizeFacility,
   clientKey, geocodeCacheKey, facilitySearchInputs,

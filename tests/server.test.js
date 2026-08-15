@@ -16,6 +16,7 @@ import {
   geminiFailureKind,
   orderedKeySlots,
   analyzeWithGemini,
+  geminiExhaustionFailure,
   materialPhrasesMatch,
   strictBoolean,
   deterministicSafetySteps,
@@ -556,9 +557,9 @@ test('PWA cache and frontend script version stay synchronized', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
-  assert.match(html, /app\.js\?v=0\.14\.0/);
-  assert.match(sw, /cleanup-v0\.14\.0/);
-  assert.match(sw, /app\.js\?v=0\.14\.0/);
+  assert.match(html, /app\.js\?v=0\.14\.1/);
+  assert.match(sw, /cleanup-v0\.14\.1/);
+  assert.match(sw, /app\.js\?v=0\.14\.1/);
 });
 
 test('new analysis attempts clear stale results before network work begins', async () => {
@@ -1007,7 +1008,7 @@ test('service worker never caches API routes and respects no-store', async () =>
   const sw = await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /no-store/);
-  assert.match(sw, /cleanup-v0\.14\.0/);
+  assert.match(sw, /cleanup-v0\.14\.1/);
 });
 
 test('Render Blueprint generates receipt secret and wires global AI budget', async () => {
@@ -1166,16 +1167,16 @@ test('mobile CSS includes safe-area bottom padding and does not ellipsize AI sta
   assert.match(css,/\.status-pill \{ max-width:none; white-space:normal; overflow:visible; text-overflow:clip/);
 });
 
-test('manifest and shell asset versions are synchronized to 0.14.0', async () => {
+test('manifest and shell asset versions are synchronized to 0.14.1', async () => {
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const html=await fs.readFile(path.join(root,'public','index.html'),'utf8');
   const sw=await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   const manifest=JSON.parse(await fs.readFile(path.join(root,'public','manifest.webmanifest'),'utf8'));
-  assert.match(html,/styles\.css\?v=0\.14\.0/);
-  assert.match(html,/manifest\.webmanifest\?v=0\.14\.0/);
-  assert.match(sw,/styles\.css\?v=0\.14\.0/);
+  assert.match(html,/styles\.css\?v=0\.14\.1/);
+  assert.match(html,/manifest\.webmanifest\?v=0\.14\.1/);
+  assert.match(sw,/styles\.css\?v=0\.14\.1/);
   assert.equal(manifest.id,'/?source=pwa');
-  assert.match(manifest.icons[0].src,/v=0\.14\.0/);
+  assert.match(manifest.icons[0].src,/v=0\.14\.1/);
 });
 
 test('battery routing requires explicit battery acceptance rather than generic electronics', () => {
@@ -1337,7 +1338,7 @@ test('repository baseline includes complete cleanup history documents without ra
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const changelog=await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8');
   const history=await fs.readFile(path.join(root,'docs','PROJECT_HISTORY.md'),'utf8');
-  assert.match(changelog,/0\.14\.0/);
+  assert.match(changelog,/0\.14\.1/);
   assert.match(history,/changed combined `cleanup` implementation/);
   assert.match(history,/does not contain the raw Android\/web reference repositories/);
 });
@@ -1380,4 +1381,43 @@ test('empty impact refresh releases its abort controller instead of leaving stal
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(frontend, /if\(!receipts\.length\)\{[\s\S]{0,500}state\.impactController===controller\)state\.impactController=null;return;/);
+});
+
+
+test('Gemini cooldown exhaustion reports quota, model access, and mixed cooldowns accurately', () => {
+  assert.equal(geminiExhaustionFailure([], { skippedQuotaCooldown: true }).code, 'GEMINI_QUOTA_EXHAUSTED');
+  assert.equal(geminiExhaustionFailure([], { skippedAccessCooldown: true }).code, 'GEMINI_MODEL_ACCESS_EXHAUSTED');
+  const mixed = geminiExhaustionFailure([], { skippedQuotaCooldown: true, skippedAccessCooldown: true });
+  assert.equal(mixed.code, 'GEMINI_ROUTES_COOLDOWN');
+  assert.equal(mixed.status, 503);
+});
+
+test('health checks cancel stale requests so an older response cannot overwrite newer AI status', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /healthGeneration/);
+  assert.match(frontend, /const generation = \+\+state\.healthGeneration/);
+  assert.match(frontend, /state\.healthController\?\.abort\(\)/);
+  assert.match(frontend, /generation !== state\.healthGeneration/);
+});
+
+test('saved action notes are sanitized and rendered back in history', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /note:boundedText\(record\?\.note,300\)/);
+  assert.match(frontend, /history-note/);
+  assert.match(frontend, /escapeHtml\(record\.note\)/);
+});
+
+test('minute schedule refresh does not revalidate every completion receipt', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /setInterval\(\(\) => \{ updateScheduleBounds\(\); if \(document\.visibilityState === 'visible'\) renderActions\(\); \}, 60_000\)/);
+  assert.doesNotMatch(frontend, /setInterval\([\s\S]{0,180}renderImpact\(\)[\s\S]{0,60}60_000/);
+});
+
+test('Render explicitly enables production error responses', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
+  assert.match(yaml, /NODE_ENV[\s\S]{0,40}production/);
 });

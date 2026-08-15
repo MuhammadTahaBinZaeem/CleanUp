@@ -2,6 +2,18 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 0.14.1 — Deep bug-fix audit
+
+- Fixed Unicode address-cache collisions for Urdu, Arabic and other non-ASCII location searches.
+- Reject expired/invalid analyzed-item proofs instead of silently falling back to caller-supplied facility tags.
+- Clear stale analysis/action context when an invalid replacement photo is chosen.
+- Ignore spoofable forwarded IP headers outside the trusted Render proxy boundary.
+- Release stale impact controllers and prevent stale health checks from overwriting newer AI status.
+- Preserve and display saved action notes in local history.
+- Stop revalidating all completion receipts every minute just to refresh scheduled-action controls.
+- Distinguish Gemini quota cooldowns from model-access cooldowns and mixed route cooldowns.
+- Explicitly set Render to production error mode and bump PWA/server cache identity to 0.14.1.
+
 ## 0.14.0 — GitHub baseline release
 
 - Published the changed/combined `cleanup` web application as the repository baseline.
