@@ -526,6 +526,12 @@ $('demoBtn').addEventListener('click', async () => {
   state.analyzeController?.abort();
   state.analyzeController = null;
   clearCurrentAnalysisForAttempt('Loading demo…');
+  if (!state.selectedFile) {
+    $('preview').src = '/assets/demo-waste-sample.webp';
+    $('preview').hidden = false;
+    $('uploadPrompt').hidden = true;
+    $('changePhotoHint').hidden = false;
+  }
   $('demoBtn').disabled = true;
   $('analyzeBtn').disabled = true;
   $('scanMessage').textContent = 'Loading a built-in two-item demo…';

@@ -16,7 +16,10 @@
   <a class="skip-link" href="#scan">Skip to main content</a>
   <header class="topbar">
     <a class="brand" href="#scan" aria-label="cleanup home">
-      <img src="/assets/brand-logo.jpg" alt="CleanUp Logo" class="brand-logo-img" />
+      <picture>
+        <source srcset="/assets/brand-logo.webp" type="image/webp" />
+        <img src="/assets/brand-logo.jpg" alt="CleanUp Logo" class="brand-logo-img" width="36" height="36" />
+      </picture>
       <span class="brand-text">cleanup</span>
     </a>
     <nav aria-label="Main navigation">
@@ -41,7 +44,10 @@
       </div>
       <div class="hero-card" aria-label="Example result">
         <div class="hero-card-img-wrap">
-          <img src="/assets/battery-hazard.jpg" alt="AA Battery special disposal graphic" class="hero-card-img" />
+          <picture>
+            <source srcset="/assets/battery-hazard.webp" type="image/webp" />
+            <img src="/assets/battery-hazard.jpg" alt="AA Battery special disposal graphic" class="hero-card-img" width="480" height="480" fetchpriority="high" />
+          </picture>
         </div>
         <div class="hero-card-info">
           <div class="hero-card-head">
@@ -68,7 +74,10 @@
             <input id="wasteImage" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" />
             <img id="preview" alt="Selected waste preview" hidden />
             <div id="uploadPrompt">
-              <img src="/assets/upload-scanner.jpg" alt="Camera scanner graphic" class="prompt-scanner-art" />
+              <picture>
+                <source srcset="/assets/upload-scanner.webp" type="image/webp" />
+                <img src="/assets/upload-scanner.jpg" alt="Camera scanner graphic" class="prompt-scanner-art" width="130" height="130" loading="lazy" decoding="async" />
+              </picture>
               <span class="camera-icon">◎</span>
               <strong>Take, choose, or drop a photo</strong>
               <small>JPEG, PNG, WEBP, HEIC/HEIF</small>
@@ -83,7 +92,10 @@
         </div>
         <div id="resultsPanel" class="results-panel empty-state" aria-busy="false">
           <div>
-            <img src="/assets/action-plan.jpg" alt="Action report illustration" class="empty-state-art" />
+            <picture>
+              <source srcset="/assets/action-plan.webp" type="image/webp" />
+              <img src="/assets/action-plan.jpg" alt="Action report illustration" class="empty-state-art" width="160" height="120" loading="lazy" decoding="async" />
+            </picture>
             <span class="big-icon">↗</span>
             <h3>Your action plan appears here</h3>
             <p>cleanup turns recognition into a disposal decision instead of showing raw AI probabilities.</p>
@@ -118,7 +130,10 @@
       <div class="map-layout">
         <div id="map" class="map">
           <div class="map-placeholder">
-            <img src="/assets/facility-map.jpg" alt="Interactive facility map graphic" class="map-placeholder-art" />
+            <picture>
+              <source srcset="/assets/facility-map.webp" type="image/webp" />
+              <img src="/assets/facility-map.jpg" alt="Interactive facility map graphic" class="map-placeholder-art" width="220" height="150" loading="lazy" decoding="async" />
+            </picture>
             <p>Choose an item, then use your location or search an address.</p>
           </div>
         </div>
@@ -170,7 +185,10 @@
           <div class="metric"><strong id="metricKg">0.0</strong><span>kg in attested records</span></div>
         </div>
         <div class="impact-cert-card">
-          <img src="/assets/eco-impact.jpg" alt="Verified zero-waste attestation certificate" class="impact-cert-img" />
+          <picture>
+            <source srcset="/assets/eco-impact.webp" type="image/webp" />
+            <img src="/assets/eco-impact.jpg" alt="Verified zero-waste attestation certificate" class="impact-cert-img" width="320" height="240" loading="lazy" decoding="async" />
+          </picture>
         </div>
       </div>
       <p id="impactProofNote" class="impact-note" aria-live="polite">Physical handoff remains self-reported until a recycler-side verifier is connected.</p>
@@ -180,7 +198,10 @@
 
   <footer>
     <div class="footer-brand">
-      <img src="/assets/brand-logo.jpg" alt="CleanUp" class="footer-logo-img" />
+      <picture>
+        <source srcset="/assets/brand-logo.webp" type="image/webp" />
+        <img src="/assets/brand-logo.jpg" alt="CleanUp" class="footer-logo-img" width="28" height="28" loading="lazy" decoding="async" />
+      </picture>
       <strong>cleanup</strong>
     </div>
     <span>AI guidance is informational. Local disposal rules and facility acceptance vary; hazardous items require extra care.</span>
