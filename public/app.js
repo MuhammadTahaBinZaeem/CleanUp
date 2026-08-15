@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const APP_VERSION = '0.14.9';
+const APP_VERSION = '1.0.0';
 const STORAGE_SCANS = 'cleanup_scans';
 const STORAGE_ACTIONS = 'cleanup_actions';
 const STORAGE_HISTORY_GENERATION = 'cleanup_history_generation';
@@ -209,17 +209,15 @@ async function health() {
     const previousReceiptPersistence = state.actionReceiptPersistent;
     state.actionReceiptPersistent = data?.actionReceiptPersistent === true;
     if (previousReceiptPersistence !== state.actionReceiptPersistent) renderImpact();
-    const configured = data?.geminiConfigured === true;
+    const configured = data?.featherlessConfigured === true;
     const usable = Number.isInteger(data?.usableKeyCount) && data.usableKeyCount >= 0 ? data.usableKeyCount : 0;
     const usableModels = Array.isArray(data?.usableModels) ? data.usableModels.filter((m) => typeof m === 'string') : [];
     state.healthRetryAttempt = 0; clearHealthRetry();
-    if (!configured) { $('aiStatus').textContent = 'Demo mode · add Gemini key'; return; }
+    if (!configured) { $('aiStatus').textContent = 'Demo mode · add Featherless key'; return; }
     if (!usable || usableModels.length === 0) { $('aiStatus').textContent = 'AI routes unavailable · demo ready'; return; }
     const routeCount = Number.isInteger(data?.availableRouteCount) && data.availableRouteCount >= 0 ? data.availableRouteCount : null;
     if (routeCount === 0) { $('aiStatus').textContent = 'AI routes cooling down · demo ready'; return; }
-    const model = typeof data.model === 'string' && data.model ? data.model : usableModels[0];
-    const suffix = usable > 1 ? ` · ${usable} keys` : '';
-    $('aiStatus').textContent = `AI ready · ${model}${suffix}`;
+    $('aiStatus').textContent = 'AI ready · automatic routing';
   } catch (error) {
     if (generation !== state.healthGeneration || error.code === 'REQUEST_CANCELLED') return;
     $('aiStatus').textContent = navigator.onLine === false ? 'Offline · saved history available' : 'Server waking or unavailable';
@@ -497,7 +495,7 @@ $('analyzeBtn').addEventListener('click', async () => {
   try {
     const prepared = await compressImage(state.selectedFile);
     if (generation !== state.analyzeGeneration) return;
-    $('scanMessage').textContent = prepared.compressed ? 'Photo resized. Asking Gemini for an action plan…' : 'Asking Gemini for an action plan…';
+    $('scanMessage').textContent = prepared.compressed ? 'Photo resized. Asking Featherless for an action plan…' : 'Asking Featherless for an action plan…';
     const data = await blobToBase64(prepared.blob);
     if (generation !== state.analyzeGeneration) return;
     const payload = await fetchJson('/api/analyze-waste', {
@@ -508,7 +506,7 @@ $('analyzeBtn').addEventListener('click', async () => {
     }, 65000);
     if (generation !== state.analyzeGeneration) return;
     const applied = await setAnalysis(payload.result, false, historyGeneration);
-    if (applied && !$('scanMessage').textContent.includes('could not save')) $('scanMessage').textContent = `Analyzed with ${state.analysis.ai_model || 'Gemini'}. Choose an item to find disposal options.`;
+    if (applied && !$('scanMessage').textContent.includes('could not save')) $('scanMessage').textContent = `Analyzed with ${state.analysis.ai_model || 'Featherless'}. Choose an item to find disposal options.`;
   } catch (error) {
     if (generation !== state.analyzeGeneration || error.code === 'REQUEST_CANCELLED') return;
     $('scanMessage').textContent = `${error.message}. You can still use the built-in demo result.`;
@@ -569,7 +567,7 @@ function normalizeAnalysisPayload(result) {
       item_proof:typeof raw.item_proof === 'string' ? raw.item_proof.slice(0,20000) : ''
     }];
   });
-  return { scene_summary:typeof result.scene_summary==='string'?result.scene_summary.slice(0,500):'Waste analysis', user_warning:typeof result.user_warning==='string'?result.user_warning.slice(0,500):'', ai_model:typeof result.ai_model==='string'?result.ai_model.slice(0,160):'Gemini', items };
+  return { scene_summary:typeof result.scene_summary==='string'?result.scene_summary.slice(0,500):'Waste analysis', user_warning:typeof result.user_warning==='string'?result.user_warning.slice(0,500):'', ai_model:typeof result.ai_model==='string'?result.ai_model.slice(0,160):'Featherless', items };
 }
 
 async function setAnalysis(result, demo, expectedHistoryGeneration = historyGenerationToken()) {

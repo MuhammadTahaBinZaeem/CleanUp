@@ -15,17 +15,7 @@ services:
         value: 0.0.0.0
       - key: NODE_ENV
         value: production
-      - key: GEMINI_MODEL_1
-        value: gemini-3.6-flash
-      - key: GEMINI_MODEL_2
-        value: gemini-3.5-flash
-      - key: GEMINI_MODEL_3
-        value: gemini-3.5-flash-lite
-      - key: GEMINI_API_KEY_1
-        sync: false
-      - key: GEMINI_API_KEY_2
-        sync: false
-      - key: GEMINI_API_KEY_3
+      - key: FEATHERLESS_API_KEY
         sync: false
       - key: ACTION_RECEIPT_SECRET
         generateValue: true
@@ -41,15 +31,15 @@ services:
         value: "60"
       - key: ACTION_RATE_LIMIT_WINDOW_MS
         value: "600000"
-      - key: GEMINI_ATTEMPT_TIMEOUT_MS
+      - key: FEATHERLESS_ATTEMPT_TIMEOUT_MS
         value: "15000"
-      - key: GEMINI_TOTAL_TIMEOUT_MS
+      - key: FEATHERLESS_TOTAL_TIMEOUT_MS
         value: "45000"
-      - key: GEMINI_QUOTA_COOLDOWN_MS
+      - key: FEATHERLESS_QUOTA_COOLDOWN_MS
         value: "60000"
-      - key: GEMINI_MODEL_ACCESS_COOLDOWN_MS
+      - key: FEATHERLESS_ACCESS_COOLDOWN_MS
         value: "900000"
-      - key: GEMINI_RESPONSE_MAX_BYTES
+      - key: FEATHERLESS_RESPONSE_MAX_BYTES
         value: "2097152"
       - key: AI_RATE_LIMIT_MAX
         value: "10"

@@ -11,12 +11,13 @@ import {
   haversineKm,
   normalizeWasteResult,
   scoreFacilityCompatibility,
-  getGeminiConfig,
+  getFeatherlessConfig,
   normalizeModelName,
-  geminiFailureKind,
+  featherlessFailureKind,
+  createFeatherlessRequestBody,
   orderedKeySlots,
-  analyzeWithGemini,
-  geminiExhaustionFailure,
+  analyzeWithFeatherless,
+  featherlessExhaustionFailure,
   materialPhrasesMatch,
   strictBoolean,
   deterministicSafetySteps,
@@ -70,35 +71,36 @@ after(async () => {
 
 
 
-test('Gemini config accepts up to three keys, removes duplicates, and supports legacy aliases', () => {
-  const config = getGeminiConfig({
-    GEMINI_API_KEY: ' key-one ',
-    GEMINI_API_KEY_2: 'key-two',
-    GEMINI_API_KEY_3: 'key-two',
-    GEMINI_MODEL: 'models/gemini-custom-primary',
-    GEMINI_MODEL_2: 'gemini-custom-backup',
-    GEMINI_MODEL_3: 'bad model name with spaces'
+test('Featherless config uses exactly one API key and internal automatic model routing', () => {
+  const config = getFeatherlessConfig({
+    FEATHERLESS_API_KEY: ' one-key ',
+    FEATHERLESS_API_KEY_2: 'ignored-extra-key',
+    FEATHERLESS_MODEL_1: 'ignored/Custom-Model'
   });
-  assert.deepEqual(config.keys, ['key-one', 'key-two']);
-  assert.deepEqual(config.models, ['gemini-custom-primary', 'gemini-custom-backup']);
+  assert.deepEqual(config.keys, ['one-key']);
+  assert.deepEqual(config.models, ['Qwen/Qwen3.6-35B-A3B', 'Qwen/Qwen3.6-27B', 'google/gemma-4-31B-it']);
 });
 
-test('Gemini config defaults to the stable primary and two backup model names', () => {
-  const config = getGeminiConfig({ GEMINI_API_KEY_1: 'x' });
-  assert.deepEqual(config.models, ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite']);
+test('old key/model slot variables are ignored so deployment stays one-key and automatic', () => {
+  const config = getFeatherlessConfig({ FEATHERLESS_API_KEY_1: 'old-key', FEATHERLESS_MODEL: 'ignored/Model' });
+  assert.deepEqual(config.keys, []);
+  assert.deepEqual(config.models, ['Qwen/Qwen3.6-35B-A3B', 'Qwen/Qwen3.6-27B', 'google/gemma-4-31B-it']);
 });
 
-test('model normalizer accepts a pasted models/ prefix and rejects unsafe names', () => {
-  assert.equal(normalizeModelName(' models/gemini-3.6-flash '), 'gemini-3.6-flash');
+test('model normalizer accepts Featherless owner/model IDs and rejects unsafe names', () => {
+  assert.equal(normalizeModelName(' Qwen/Qwen3.6-35B-A3B '), 'Qwen/Qwen3.6-35B-A3B');
   assert.equal(normalizeModelName('../secret'), '');
-  assert.equal(normalizeModelName('gemini model'), '');
+  assert.equal(normalizeModelName('model without owner'), '');
+  assert.equal(normalizeModelName('Qwen//bad'), '');
 });
 
-test('Gemini failure classification distinguishes key, quota, model, and fatal failures', () => {
-  assert.equal(geminiFailureKind(401, ''), 'key');
-  assert.equal(geminiFailureKind(429, ''), 'key-or-quota');
-  assert.equal(geminiFailureKind(404, 'model not found'), 'model');
-  assert.equal(geminiFailureKind(400, 'invalid image'), 'fatal');
+test('Featherless failure classification distinguishes key, cold model, access, quota, model, and fatal failures', () => {
+  assert.equal(featherlessFailureKind(401, 'API key is not recognized'), 'key');
+  assert.equal(featherlessFailureKind(400, 'model is cold and not ready for inference'), 'model-cold');
+  assert.equal(featherlessFailureKind(403, 'model not available on this plan'), 'key-model-access');
+  assert.equal(featherlessFailureKind(429, 'rate limit'), 'key-or-quota');
+  assert.equal(featherlessFailureKind(404, 'model_not_found'), 'model');
+  assert.equal(featherlessFailureKind(400, 'invalid image'), 'fatal');
 });
 
 test('key slot ordering starts from the last healthy key and wraps around', () => {
@@ -116,12 +118,12 @@ function fakeWasteResult(name = 'Bottle') {
   };
 }
 
-test('Gemini analysis rotates to a second key after quota failure', async () => {
+test('Featherless analysis rotates to a second key after quota failure', async () => {
   const calls = [];
-  const result = await analyzeWithGemini(
+  const result = await analyzeWithFeatherless(
     { mimeType: 'image/jpeg', data: TEST_JPEG_DATA },
     {
-      config: { keys: ['key-a', 'key-b'], models: ['gemini-primary'] },
+      config: { keys: ['key-a', 'key-b'], models: ['featherless-primary'] },
       call: async ({ apiKey, model }) => {
         calls.push([apiKey, model]);
         return apiKey === 'key-a'
@@ -130,13 +132,13 @@ test('Gemini analysis rotates to a second key after quota failure', async () => 
       }
     }
   );
-  assert.deepEqual(calls, [['key-a', 'gemini-primary'], ['key-b', 'gemini-primary']]);
-  assert.equal(result.ai_model, 'gemini-primary');
+  assert.deepEqual(calls, [['key-a', 'featherless-primary'], ['key-b', 'featherless-primary']]);
+  assert.equal(result.ai_model, 'featherless-primary');
 });
 
-test('Gemini analysis falls back to the next model and reports the model actually used', async () => {
+test('Featherless analysis falls back to the next model and reports the model actually used', async () => {
   const calls = [];
-  const result = await analyzeWithGemini(
+  const result = await analyzeWithFeatherless(
     { mimeType: 'image/jpeg', data: TEST_JPEG_DATA },
     {
       config: { keys: ['key-a'], models: ['missing-model', 'backup-model'] },
@@ -163,14 +165,14 @@ test('confirmed missing model is skipped on later scans in the same service proc
       ? { ok: false, status: 404, detail: 'model not found', kind: 'model' }
       : { ok: true, value: fakeWasteResult() };
   };
-  await analyzeWithGemini({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA }, { config, call });
-  await analyzeWithGemini({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA }, { config, call });
+  await analyzeWithFeatherless({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA }, { config, call });
+  await analyzeWithFeatherless({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA }, { config, call });
   assert.deepEqual(calls, ['definitely-missing-model-for-test', 'persistent-backup-model', 'persistent-backup-model']);
 });
 
-test('authentication-rejected Gemini keys are not retried on backup models', async () => {
+test('authentication-rejected Featherless keys are not retried on backup models', async () => {
   const calls = [];
-  const result = await analyzeWithGemini(
+  const result = await analyzeWithFeatherless(
     { mimeType: 'image/jpeg', data: TEST_JPEG_DATA },
     {
       config: { keys: ['bad-key', 'quota-key'], models: ['primary-model', 'backup-model'] },
@@ -211,9 +213,9 @@ test('authentication-rejected key is skipped on later scans in the same service 
     if (apiKey === 'persistent-good-before-bad') return { ok: false, status: 429, detail: 'quota', kind: 'key-or-quota' };
     return { ok: true, value: fakeWasteResult() };
   };
-  await analyzeWithGemini({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA }, { config, call });
+  await analyzeWithFeatherless({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA }, { config, call });
   phase = 2;
-  await analyzeWithGemini({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA }, { config, call });
+  await analyzeWithFeatherless({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA }, { config, call });
   assert.equal(calls.filter(([, key]) => key === 'persistent-bad-key').length, 1);
 });
 
@@ -228,7 +230,7 @@ test('base64 byte estimator rejects malformed data', () => {
 });
 
 
-test('image signature validation rejects MIME spoofing before Gemini is called', () => {
+test('image signature validation rejects MIME spoofing before Featherless is called', () => {
   assert.equal(imageSignatureMatches('image/jpeg', TEST_JPEG_DATA), true);
   assert.equal(imageSignatureMatches('image/png', TEST_JPEG_DATA), false);
   const png = Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]).toString('base64');
@@ -411,17 +413,17 @@ test('serial gate does not run outbound tasks concurrently', async () => {
   assert.equal(peak, 1);
 });
 
-test('/healthz is cheap and does not expose Gemini configuration', async () => {
+test('/healthz is cheap and does not expose Featherless configuration', async () => {
   const text = await fetch(`${baseUrl}/healthz`).then((r) => r.text());
   assert.match(text, /"ok":true/);
   assert.match(text, /"service":"cleanup"/);
-  assert.doesNotMatch(text, /geminiConfigured|model/);
+  assert.doesNotMatch(text, /featherlessConfigured|model/);
 });
 
 test('/api/health reports AI configuration without exposing the key', async () => {
   const text = await fetch(`${baseUrl}/api/health`).then((r) => r.text());
-  assert.match(text, /"geminiConfigured":/);
-  assert.doesNotMatch(text, /GEMINI_API_KEY/);
+  assert.match(text, /"featherlessConfigured":/);
+  assert.doesNotMatch(text, /FEATHERLESS_API_KEY/);
 });
 
 test('demo analysis works without requiring a fake JSON body', async () => {
@@ -511,33 +513,37 @@ test('frontend and backend tolerate both geocode response shapes', async () => {
   assert.match(backend, /places,/);
 });
 
-test('Gemini structured output uses responseFormat schema without deprecated sampling settings', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
-  const backend = await fs.readFile(path.join(root, 'server.js'), 'utf8');
-  assert.match(backend, /responseFormat:[\s\S]*mimeType: 'application\/json'[\s\S]*schema: WASTE_SCHEMA/);
-  assert.doesNotMatch(backend, /temperature:\s*0\.2/);
+test('Featherless request uses OpenAI-compatible JSON-mode vision content', () => {
+  const body = createFeatherlessRequestBody({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA, model: 'Qwen/Qwen3.6-35B-A3B' });
+  assert.equal(body.model, 'Qwen/Qwen3.6-35B-A3B');
+  assert.deepEqual(body.response_format, { type: 'json_object' });
+  assert.equal(body.messages[0].role, 'user');
+  assert.equal(body.messages[0].content[0].type, 'text');
+  assert.match(body.messages[0].content[0].text, /never invent an item/i);
+  assert.match(body.messages[0].content[0].text, /"minItems":0/);
+  assert.equal(body.messages[0].content[1].type, 'image_url');
+  assert.match(body.messages[0].content[1].image_url.url, /^data:image\/jpeg;base64,/);
+  assert.ok(body.max_tokens >= 1000);
 });
 
-test('Gemini schema permits zero detected waste items instead of forcing hallucination', async () => {
-  const root = path.resolve(new URL('..', import.meta.url).pathname);
-  const source = await fs.readFile(path.join(root, 'server.js'), 'utf8');
-  assert.match(source, /minItems:\s*0/);
-  assert.match(source, /return an empty items array/);
-  assert.match(source, /never invent an item/);
+test('Featherless prompt permits zero detected waste items instead of forcing hallucination', () => {
+  const body = createFeatherlessRequestBody({ mimeType: 'image/jpeg', data: TEST_JPEG_DATA, model: 'Qwen/Qwen3.6-35B-A3B' });
+  const prompt = body.messages[0].content[0].text;
+  assert.match(prompt, /return an empty items array/i);
+  assert.match(prompt, /never invent an item/i);
 });
 
-test('Render Blueprint is named cleanup and uses a cheap health endpoint', async () => {
+test('Render Blueprint is named cleanup, uses a cheap health endpoint, and needs one Featherless key', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
   assert.match(yaml, /name:\s*cleanup/);
   assert.match(yaml, /healthCheckPath:\s*\/healthz/);
-  assert.match(yaml, /GEMINI_API_KEY_1[\s\S]*sync:\s*false/);
-  assert.match(yaml, /GEMINI_API_KEY_2[\s\S]*sync:\s*false/);
-  assert.match(yaml, /GEMINI_API_KEY_3[\s\S]*sync:\s*false/);
-  assert.match(yaml, /GEMINI_MODEL_1[\s\S]*gemini-3\.6-flash/);
+  assert.match(yaml, /- key: FEATHERLESS_API_KEY\n\s+sync: false/);
+  assert.doesNotMatch(yaml, /FEATHERLESS_API_KEY_[123]|FEATHERLESS_MODEL_[123]|FEATHERLESS_BASE_URL/);
   const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');
-  assert.match(envExample, /GEMINI_API_KEY_2=/);
-  assert.match(envExample, /GEMINI_API_KEY_3=/);
+  assert.match(envExample, /^FEATHERLESS_API_KEY=/m);
+  assert.doesNotMatch(envExample, /^FEATHERLESS_API_KEY_[123]=/m);
+  assert.doesNotMatch(envExample, /^FEATHERLESS_MODEL(?:_[123])?=/m);
 });
 
 
@@ -567,9 +573,9 @@ test('PWA cache and frontend script version stay synchronized', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
-  assert.match(html, /app\.js\?v=0\.14\.9/);
-  assert.match(sw, /cleanup-v0\.14\.9/);
-  assert.match(sw, /app\.js\?v=0\.14\.9/);
+  assert.match(html, /app\.js\?v=1\.0\.0/);
+  assert.match(sw, /cleanup-v1\.0\.0/);
+  assert.match(sw, /app\.js\?v=1\.0\.0/);
 });
 
 test('new analysis attempts clear stale results before network work begins', async () => {
@@ -720,14 +726,16 @@ test('previous product name and capitalized product spelling do not remain in pr
   }
 });
 
-test('Render Blueprint exposes all three Gemini secret slots and configurable provider controls', async () => {
+test('Render Blueprint keeps model routing internal', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const yaml = await fs.readFile(path.join(root, 'render.yaml'), 'utf8');
-  for (const slot of [1, 2, 3]) assert.match(yaml, new RegExp(`GEMINI_API_KEY_${slot}[\\s\\S]{0,40}sync:\\s*false`));
-  assert.match(yaml, /NOMINATIM_MIN_INTERVAL_MS[\s\S]*1100/);
-  assert.match(yaml, /GEOCODE_CACHE_MS[\s\S]*86400000/);
-  assert.match(yaml, /NOMINATIM_BASE_URL/);
-  assert.match(yaml, /OVERPASS_URL/);
+  assert.match(yaml, /- key: FEATHERLESS_API_KEY\n\s+sync: false/);
+  assert.doesNotMatch(yaml, /FEATHERLESS_API_KEY_[123]|FEATHERLESS_MODEL_[123]|FEATHERLESS_BASE_URL/);
+  const backend = await fs.readFile(path.join(root, 'server.js'), 'utf8');
+  assert.match(backend, /AUTO_FEATHERLESS_MODELS/);
+  assert.match(backend, /Qwen\/Qwen3\.6-35B-A3B/);
+  assert.match(backend, /Qwen\/Qwen3\.6-27B/);
+  assert.match(backend, /google\/gemma-4-31B-it/);
 });
 
 test('server serializes and caches Nominatim instead of issuing unrestricted public geocoder traffic', async () => {
@@ -825,16 +833,17 @@ test('analysis input validation rejects correct base64 with a spoofed image sign
   assert.throws(() => validateAnalysisImageInput({ mimeType: 'image/jpeg', data: Buffer.from('not jpeg').toString('base64') }), /does not match/);
 });
 
-test('invalid API key HTTP 400 is classified as key failure so rotation can continue', () => {
-  assert.equal(geminiFailureKind(400, '{"reason":"API_KEY_INVALID","message":"API key not valid"}'), 'key');
+test('Featherless invalid API key HTTP 401 is a key failure while cold HTTP 400 falls back models', () => {
+  assert.equal(featherlessFailureKind(401, '{"message":"API key is not recognized"}'), 'key');
+  assert.equal(featherlessFailureKind(400, '{"message":"model is cold and not ready for inference"}'), 'model-cold');
 });
 
 test('model access HTTP 403 is pair-specific rather than globally marking the model missing', () => {
-  assert.equal(geminiFailureKind(403, 'permission denied for this project'), 'key-model-access');
+  assert.equal(featherlessFailureKind(403, 'permission denied for this project'), 'key-model-access');
 });
 
 test('true model 404 remains a model failure', () => {
-  assert.equal(geminiFailureKind(404, 'model not found'), 'model');
+  assert.equal(featherlessFailureKind(404, 'model not found'), 'model');
 });
 
 test('client browser origin guard rejects cross-site and null origins', () => {
@@ -1018,7 +1027,7 @@ test('service worker never caches API routes and respects no-store', async () =>
   const sw = await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /no-store/);
-  assert.match(sw, /cleanup-v0\.14\.9/);
+  assert.match(sw, /cleanup-v1\.0\.0/);
 });
 
 test('Render Blueprint generates receipt secret and wires global AI budget', async () => {
@@ -1026,14 +1035,14 @@ test('Render Blueprint generates receipt secret and wires global AI budget', asy
   const yaml = await fs.readFile(path.join(root,'render.yaml'),'utf8');
   assert.match(yaml, /ACTION_RECEIPT_SECRET[\s\S]{0,40}generateValue:\s*true/);
   assert.match(yaml, /AI_GLOBAL_RATE_LIMIT_MAX/);
-  assert.match(yaml, /GEMINI_MODEL_ACCESS_COOLDOWN_MS/);
+  assert.match(yaml, /FEATHERLESS_ACCESS_COOLDOWN_MS/);
   assert.match(yaml, /buildCommand:\s*npm ci && npm run check/);
 });
 
-test('Gemini 403 on one key rotates to another key on the same primary model', async () => {
+test('Featherless 403 on one key rotates to another key on the same primary model', async () => {
   const calls = [];
-  const config = { keys:['key-a','key-b'], models:['gemini-same-primary','gemini-backup'] };
-  const result = await analyzeWithGemini({ mimeType:'image/jpeg', data:TEST_JPEG_DATA }, {
+  const config = { keys:['key-a','key-b'], models:['featherless-same-primary','featherless-backup'] };
+  const result = await analyzeWithFeatherless({ mimeType:'image/jpeg', data:TEST_JPEG_DATA }, {
     config,
     call: async ({apiKey,model}) => {
       calls.push([apiKey,model]);
@@ -1043,20 +1052,20 @@ test('Gemini 403 on one key rotates to another key on the same primary model', a
   });
   assert.equal(calls.length, 2);
   assert.notEqual(calls[0][0], calls[1][0]);
-  assert.equal(calls[0][1], 'gemini-same-primary');
-  assert.equal(calls[1][1], 'gemini-same-primary');
-  assert.equal(result.ai_model, 'gemini-same-primary');
+  assert.equal(calls[0][1], 'featherless-same-primary');
+  assert.equal(calls[1][1], 'featherless-same-primary');
+  assert.equal(result.ai_model, 'featherless-same-primary');
 });
 
-test('Gemini invalid-key 400 rotates to the next key instead of stopping failover', async () => {
+test('Featherless invalid-key failure is surfaced cleanly with one configured key', async () => {
   const calls=[];
-  const result=await analyzeWithGemini({mimeType:'image/jpeg',data:TEST_JPEG_DATA},{
-    config:{keys:['bad-400','good-400'],models:['gemini-key-400']},
+  const result=await analyzeWithFeatherless({mimeType:'image/jpeg',data:TEST_JPEG_DATA},{
+    config:{keys:['bad-400','good-400'],models:['featherless-key-400']},
     call:async({apiKey})=>{calls.push(apiKey);return calls.length===1?{ok:false,status:400,kind:'key',detail:'API_KEY_INVALID'}:{ok:true,value:{scene_summary:'ok',uncertain:false,user_warning:'',items:[]}};}
   });
   assert.equal(calls.length,2);
   assert.notEqual(calls[0],calls[1]);
-  assert.equal(result.ai_model,'gemini-key-400');
+  assert.equal(result.ai_model,'featherless-key-400');
 });
 
 test('malformed AI array entries are dropped instead of becoming fake Unknown cards', () => {
@@ -1177,16 +1186,16 @@ test('mobile CSS includes safe-area bottom padding and does not ellipsize AI sta
   assert.match(css,/\.status-pill \{ max-width:none; white-space:normal; overflow:visible; text-overflow:clip/);
 });
 
-test('manifest and shell asset versions are synchronized to 0.14.9', async () => {
+test('manifest and shell asset versions are synchronized to 1.0.0', async () => {
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const html=await fs.readFile(path.join(root,'public','index.html'),'utf8');
   const sw=await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   const manifest=JSON.parse(await fs.readFile(path.join(root,'public','manifest.webmanifest'),'utf8'));
-  assert.match(html,/styles\.css\?v=0\.14\.9/);
-  assert.match(html,/manifest\.webmanifest\?v=0\.14\.9/);
-  assert.match(sw,/styles\.css\?v=0\.14\.9/);
+  assert.match(html,/styles\.css\?v=1\.0\.0/);
+  assert.match(html,/manifest\.webmanifest\?v=1\.0\.0/);
+  assert.match(sw,/styles\.css\?v=1\.0\.0/);
   assert.equal(manifest.id,'/?source=pwa');
-  assert.match(manifest.icons[0].src,/v=0\.14\.9/);
+  assert.match(manifest.icons[0].src,/v=1\.0\.0/);
 });
 
 test('battery routing requires explicit battery acceptance rather than generic electronics', () => {
@@ -1348,7 +1357,7 @@ test('repository baseline includes complete cleanup history documents without ra
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const changelog=await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8');
   const history=await fs.readFile(path.join(root,'docs','PROJECT_HISTORY.md'),'utf8');
-  assert.match(changelog,/0\.14\.9/);
+  assert.match(changelog,/1\.0\.0/);
   assert.match(history,/changed combined `cleanup` implementation/);
   assert.match(history,/does not contain the raw Android\/web reference repositories/);
 });
@@ -1394,11 +1403,11 @@ test('empty impact refresh releases its abort controller instead of leaving stal
 });
 
 
-test('Gemini cooldown exhaustion reports quota, model access, and mixed cooldowns accurately', () => {
-  assert.equal(geminiExhaustionFailure([], { skippedQuotaCooldown: true }).code, 'GEMINI_QUOTA_EXHAUSTED');
-  assert.equal(geminiExhaustionFailure([], { skippedAccessCooldown: true }).code, 'GEMINI_MODEL_ACCESS_EXHAUSTED');
-  const mixed = geminiExhaustionFailure([], { skippedQuotaCooldown: true, skippedAccessCooldown: true });
-  assert.equal(mixed.code, 'GEMINI_ROUTES_COOLDOWN');
+test('Featherless cooldown exhaustion reports quota, model access, and mixed cooldowns accurately', () => {
+  assert.equal(featherlessExhaustionFailure([], { skippedQuotaCooldown: true }).code, 'FEATHERLESS_QUOTA_EXHAUSTED');
+  assert.equal(featherlessExhaustionFailure([], { skippedAccessCooldown: true }).code, 'FEATHERLESS_MODEL_ACCESS_EXHAUSTED');
+  const mixed = featherlessExhaustionFailure([], { skippedQuotaCooldown: true, skippedAccessCooldown: true });
+  assert.equal(mixed.code, 'FEATHERLESS_ROUTES_COOLDOWN');
   assert.equal(mixed.status, 503);
 });
 
@@ -1721,4 +1730,23 @@ test('clear history advances a cross-tab generation marker while both history st
   assert.match(block, /withStorageLock\(STORAGE_ACTIONS[\s\S]{0,200}withStorageLock\(STORAGE_SCANS/);
   assert.match(block, /storage\.remove\(STORAGE_SCANS\)[\s\S]{0,200}storage\.remove\(STORAGE_ACTIONS\)[\s\S]{0,200}bumpHistoryGeneration\(\)/);
   assert.match(frontend, /STORAGE_HISTORY_GENERATION/);
+});
+
+
+test('deployable v1 source uses one Featherless key and contains no Gemini runtime variables', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  for (const rel of ['server.js', 'public/app.js', 'public/index.html', 'render.yaml', '.env.example', 'RENDER_DEPLOY.md', 'README.md']) {
+    const text = await fs.readFile(path.join(root, rel), 'utf8');
+    assert.doesNotMatch(text, /GEMINI_API_KEY|GEMINI_MODEL|generativelanguage\.googleapis\.com/);
+  }
+  const backend = await fs.readFile(path.join(root, 'server.js'), 'utf8');
+  assert.match(backend, /api\.featherless\.ai\/v1/);
+  assert.match(backend, /Authorization': `Bearer \$\{apiKey\}`/);
+  const envExample = await fs.readFile(path.join(root, '.env.example'), 'utf8');
+  assert.equal((envExample.match(/^FEATHERLESS_API_KEY=/gm) || []).length, 1);
+  assert.doesNotMatch(envExample, /^FEATHERLESS_API_KEY_[123]=/m);
+  assert.doesNotMatch(envExample, /^FEATHERLESS_MODEL(?:_[123])?=/m);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /AI ready · automatic routing/);
+  assert.doesNotMatch(frontend, /AI ready · \${model}/);
 });

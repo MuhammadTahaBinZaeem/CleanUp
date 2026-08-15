@@ -2,6 +2,15 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 1.0.0 — Featherless automatic vision routing
+
+- Replaced the Gemini runtime with Featherless's OpenAI-compatible vision API.
+- Deployment now needs exactly one `FEATHERLESS_API_KEY`; users do not configure model names.
+- cleanup automatically routes across an internal pool of vision-capable Featherless models and falls back on cold, unavailable, access-limited, quota-limited, or transient routes.
+- The frontend reports only automatic-routing readiness rather than exposing model selection controls.
+- Preserved deterministic hazardous-waste overrides, signed action proofs, facility matching, impact verification, rate limits, PWA behavior, and all prior safety boundaries.
+- Synchronized the application, manifest, service-worker, Render deployment and tests to `1.0.0`.
+
 ## 0.14.9 — Clear-history generation fencing
 
 - Clearing local history now advances a cross-tab generation marker while scan and action stores are locked.
