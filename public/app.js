@@ -8,6 +8,7 @@ const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const MAX_STORAGE_CHARS = 1_500_000;
 const ACTION_MAX_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_UPLOAD_PROMPT = '<span class="camera-icon">◎</span><strong>Take, choose, or drop a photo</strong><small>JPEG, PNG, WEBP, HEIC/HEIF</small>';
 
 const state = {
   selectedFile: null,
@@ -311,10 +312,13 @@ function supportedImageFile(file) {
 }
 
 function clearSelectedImage(message = '') {
+  const hadAnalysisContext = Boolean(state.selectedFile || state.analysis || state.selectedItemIndex !== null || state.facilities.length);
+  if (hadAnalysisContext) resetAnalysisForNewImage();
   revokePreview();
   state.selectedFile = null;
   $('preview').removeAttribute('src');
   $('preview').hidden = true;
+  $('uploadPrompt').innerHTML = DEFAULT_UPLOAD_PROMPT;
   $('uploadPrompt').hidden = false;
   $('changePhotoHint').hidden = true;
   $('analyzeBtn').disabled = true;
@@ -348,7 +352,10 @@ function selectImageFile(file) {
 }
 
 $('wasteImage').addEventListener('click', (event) => { event.currentTarget.value = ''; });
-$('wasteImage').addEventListener('change', (event) => selectImageFile(event.target.files?.[0]));
+$('wasteImage').addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  if (file) selectImageFile(file);
+});
 $('preview').addEventListener('error', () => {
   $('preview').hidden = true;
   $('uploadPrompt').hidden = false;
@@ -1170,7 +1177,7 @@ async function renderImpact() {
   const receipts=[...new Set(actions.filter((r)=>r?.status==='completed'&&typeof r?.completionReceipt==='string').map((r)=>r.completionReceipt).filter((x)=>x.length>20&&x.length<=20000))];
   state.impactController?.abort(); const controller=new AbortController(); state.impactController=controller;
   state.verifiedReceiptDetails=new Map();
-  if(!receipts.length){$('metricPickups').textContent='0';$('metricKg').textContent='0.0';if($('impactProofNote'))$('impactProofNote').textContent='No server-attested matched completions are stored in this browser yet. Physical handoff remains self-reported.';renderActions();return;}
+  if(!receipts.length){$('metricPickups').textContent='0';$('metricKg').textContent='0.0';if($('impactProofNote'))$('impactProofNote').textContent='No server-attested matched completions are stored in this browser yet. Physical handoff remains self-reported.';renderActions();if(state.impactController===controller)state.impactController=null;return;}
   try{
     const payload=await fetchJson('/api/action/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receipts}),signal:controller.signal},15000);
     const requested=new Set(receipts); const completions=(Array.isArray(payload.completions)?payload.completions:[]).map((x)=>normalizeVerifiedCompletion(x,requested)).filter(Boolean);

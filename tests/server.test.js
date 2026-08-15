@@ -43,7 +43,10 @@ import {
   validSignedPlanPayload,
   validSignedCompletionPayload,
   verifyCompletionReceiptEntries,
-  verifyCompletionReceipts
+  verifyCompletionReceipts,
+  clientKey,
+  geocodeCacheKey,
+  facilitySearchInputs
 } from '../server.js';
 
 let baseUrl;
@@ -1337,4 +1340,44 @@ test('repository baseline includes complete cleanup history documents without ra
   assert.match(changelog,/0\.14\.0/);
   assert.match(history,/changed combined `cleanup` implementation/);
   assert.match(history,/does not contain the raw Android\/web reference repositories/);
+});
+
+
+test('geocode cache keys keep distinct Unicode address queries separate', () => {
+  assert.notEqual(geocodeCacheKey('لاہور'), geocodeCacheKey('کراچی'));
+  assert.equal(geocodeCacheKey('  Lahore  '), geocodeCacheKey('lahore'));
+});
+
+test('facility search fails closed when an item proof is supplied but invalid', () => {
+  assert.throws(
+    () => facilitySearchInputs({ lat: 33.6844, lon: 73.0479, itemProof: 'invalid.item.proof', tags: ['plastic'] }),
+    (error) => error?.code === 'BAD_ITEM_PROOF' && error?.status === 400
+  );
+});
+
+test('client rate-limit identity ignores spoofed forwarded IPs outside Render', () => {
+  const oldRender = process.env.RENDER;
+  const oldServiceId = process.env.RENDER_SERVICE_ID;
+  delete process.env.RENDER;
+  delete process.env.RENDER_SERVICE_ID;
+  try {
+    assert.equal(clientKey({ headers: { 'x-forwarded-for': '8.8.8.8' }, socket: { remoteAddress: '::ffff:127.0.0.1' } }), '127.0.0.1');
+  } finally {
+    if (oldRender === undefined) delete process.env.RENDER; else process.env.RENDER = oldRender;
+    if (oldServiceId === undefined) delete process.env.RENDER_SERVICE_ID; else process.env.RENDER_SERVICE_ID = oldServiceId;
+  }
+});
+
+test('invalid replacement photos clear stale analysis context and restore the upload prompt', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /function clearSelectedImage[\s\S]{0,500}resetAnalysisForNewImage\(\)/);
+  assert.match(frontend, /uploadPrompt'\)\.innerHTML = DEFAULT_UPLOAD_PROMPT/);
+  assert.match(frontend, /const file = event\.target\.files\?\.\[0\];[\s\S]{0,80}if \(file\) selectImageFile\(file\)/);
+});
+
+test('empty impact refresh releases its abort controller instead of leaving stale state', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /if\(!receipts\.length\)\{[\s\S]{0,500}state\.impactController===controller\)state\.impactController=null;return;/);
 });

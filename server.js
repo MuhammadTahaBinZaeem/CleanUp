@@ -298,10 +298,10 @@ function json(res, status, body, extraHeaders = {}) {
 
 function clientKey(req) {
   const forwarded = String(req.headers['x-forwarded-for'] || '').split(',').map((value) => value.trim()).filter(Boolean);
+  // Only trust proxy-provided forwarding headers on Render, where the proxy is part of the deployment boundary.
+  // On direct/local hosting an arbitrary client can spoof X-Forwarded-For, so rate limits must use the socket peer.
   if (process.env.RENDER === 'true' || process.env.RENDER_SERVICE_ID) {
     for (let index = forwarded.length - 1; index >= 0; index -= 1) if (isIP(forwarded[index])) return forwarded[index];
-  } else {
-    for (const value of forwarded) if (isIP(value)) return value;
   }
   const remote = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
   return isIP(remote) ? remote : 'unknown';
@@ -384,6 +384,10 @@ function sanitizeDisplayText(value, maxLength = 240, fallback = '') {
 }
 function sanitizeLookupText(value, maxLength = 200) {
   return sanitizeDisplayText(value, maxLength).replace(/[<>]/g, '').trim();
+}
+function geocodeCacheKey(value) {
+  const normalized = sanitizeLookupText(value, 200).normalize('NFKC').toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
+  return 'geo:' + crypto.createHash('sha256').update(normalized).digest('base64url');
 }
 function sanitizeHeaderValue(value, maxLength = 240) {
   return sanitizeDisplayText(value, maxLength).replace(/[\r\n]/g, ' ');
@@ -1219,7 +1223,10 @@ function facilitySearchInputs(body = {}) {
   let wantedTags = cleanStringArray(body.tags, 12, 80);
   if (itemProof) {
     const itemPayload = decodeSignedPayload(itemProof);
-    if (validSignedItemPayload(itemPayload)) wantedTags = itemPayload.specialHandling ? deterministicFacilityTags(itemPayload.wasteType) : itemPayload.facilityTags;
+    if (!validSignedItemPayload(itemPayload)) {
+      throw Object.assign(new Error('The analyzed item proof is invalid or expired. Analyze the photo again before searching facilities.'), { code: 'BAD_ITEM_PROOF', status: 400 });
+    }
+    wantedTags = itemPayload.specialHandling ? deterministicFacilityTags(itemPayload.wasteType) : itemPayload.facilityTags;
   }
   return { lat, lon, itemProof, wantedTags };
 }
@@ -1319,7 +1326,7 @@ const server = http.createServer(async (req, res) => {
         const raw = method === 'POST' ? await readJsonObject(req) : { query: url.searchParams.get('q') };
         const q = sanitizeLookupText(raw.query ?? raw.q, 200);
         if (q.length < 3) return json(res, 400, { ok:false, code:'BAD_QUERY', error:'Enter at least 3 characters of an address' });
-        const key = `geo:${normalizeText(q)}`;
+        const key = geocodeCacheKey(q);
         const places = await cachedLookup(key, () => geocodeAddress(q, { signal: connection.signal }), GEOCODE_CACHE_MS);
         return json(res, 200, { ok:true, places, results:places.map((place) => ({ label:place.display_name, lat:place.lat, lon:place.lon })) });
       } catch (error) {
@@ -1390,6 +1397,7 @@ export {
   orderedKeySlots, analyzeWithGemini, materialPhrasesMatch, strictBoolean, deterministicSafetySteps,
   deterministicSafetyExplanation, deterministicFacilityTags, createSerialGate, validCoordinates, demoFacilities,
   finiteNumber, browserApiRequestAllowed, validateAnalysisImageInput, rankFacilities, normalizeFacility,
+  clientKey, geocodeCacheKey, facilitySearchInputs,
   encodeSignedPayload, decodeSignedPayload, attestedFacilityTagsForItem, createAnalysisItemProof, attestAnalysisItems,
   validSignedItemPayload, createFacilityProof, validSignedFacilityProofPayload, deterministicPlanId,
   prepareActionReceipt, completeActionReceipt, validSignedPlanPayload, validSignedCompletionPayload,
