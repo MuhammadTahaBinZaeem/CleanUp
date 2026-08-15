@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PUBLIC_REAL_DIR = await fs.realpath(PUBLIC_DIR).catch(() => PUBLIC_DIR);
-const VERSION = '0.14.5';
+const VERSION = '0.14.6';
 
 async function loadDotEnv() {
   try {

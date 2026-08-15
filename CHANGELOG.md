@@ -2,6 +2,13 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 0.14.6 — Cross-tab proof-operation serialization
+
+- Plan-proof retry, completion, and completion-attestation retry now hold a shared per-action browser lock across the full read → server request → local write operation when Web Locks are available.
+- A second tab waiting on the same action re-reads current history after acquiring the lock and skips duplicate proof minting if the first tab already stored the result.
+- Final proof writes also require the target receipt slot to remain empty, preventing a stale waiter from replacing a newer receipt.
+- PWA/server cache identity bumped to 0.14.6.
+
 ## 0.14.5 — Render identity and history-clear race fixes
 
 - Render rate limiting now uses the first `X-Forwarded-For` address, matching Render's documented real-client ordering instead of accidentally selecting a later proxy hop.

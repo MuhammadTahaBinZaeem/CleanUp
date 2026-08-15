@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const APP_VERSION = '0.14.5';
+const APP_VERSION = '0.14.6';
 const STORAGE_SCANS = 'cleanup_scans';
 const STORAGE_ACTIONS = 'cleanup_actions';
 const MAX_SELECTED_FILE_BYTES = 30 * 1024 * 1024;
@@ -101,6 +101,9 @@ async function mutateStoredArray(key, mutator) {
     const next = await mutator(current) || current;
     return storage.set(key, next);
   });
+}
+async function withActionOperationLock(marker, task) {
+  return withStorageLock(`action-operation:${marker}`, task);
 }
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -1166,17 +1169,20 @@ function renderActions() {
 async function retryPlanProof(marker) {
   if (state.actionLocks.has(`plan:${marker}`)) return; state.actionLocks.add(`plan:${marker}`);
   try {
-    const snapshot=storage.getArray(STORAGE_ACTIONS).find((r)=>recordMarker(r)===marker);
-    if (!snapshot||snapshot.status==='completed') { $('pickupMessage').textContent='No pre-action proof can be created after completion.'; return; }
-    if (!storedActionIsValid(snapshot) || snapshot.action !== 'dropoff' || snapshot.isDemo === true) { $('pickupMessage').textContent='This saved action is invalid or demo-only and cannot receive a server plan proof.'; renderActions(); return; }
-    if (!snapshot.facilityProof) { $('pickupMessage').textContent='Search the facility again to obtain a fresh matched proof.'; return; }
-    if (Date.parse(recordPlannedIso(snapshot)||0)<Date.now()-60_000) { $('pickupMessage').textContent='The scheduled time has passed; a pre-action proof cannot be created retroactively.'; return; }
-    const receipt=await requestPlanProof(snapshot);
-    let updated=false;
-    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{ const found=all.find((r)=>recordMarker(r)===marker); if(found&&found.status==='planned'&&storedActionIsValid(found)) {found.planReceipt=receipt;found.proofState='planned-proof';found.proofError='';updated=true;} return all; });
-    if(!saved){$('pickupMessage').textContent='The proof was created, but browser storage could not save it. Check storage settings and retry.';return;}
-    if(!updated){$('pickupMessage').textContent='This action changed in another tab before the proof could be stored.';renderActions();return;}
-    $('pickupMessage').textContent='Pre-action server proof stored.'; renderActions();
+    await withActionOperationLock(marker, async () => {
+      const snapshot=storage.getArray(STORAGE_ACTIONS).find((r)=>recordMarker(r)===marker);
+      if (!snapshot||snapshot.status==='completed') { $('pickupMessage').textContent='No pre-action proof can be created after completion.'; return; }
+      if (!storedActionIsValid(snapshot) || snapshot.action !== 'dropoff' || snapshot.isDemo === true) { $('pickupMessage').textContent='This saved action is invalid or demo-only and cannot receive a server plan proof.'; renderActions(); return; }
+      if (snapshot.planReceipt) { $('pickupMessage').textContent='A pre-action server proof is already stored for this action.'; renderActions(); return; }
+      if (!snapshot.facilityProof) { $('pickupMessage').textContent='Search the facility again to obtain a fresh matched proof.'; return; }
+      if (Date.parse(recordPlannedIso(snapshot)||0)<Date.now()-60_000) { $('pickupMessage').textContent='The scheduled time has passed; a pre-action proof cannot be created retroactively.'; return; }
+      const receipt=await requestPlanProof(snapshot);
+      let updated=false;
+      const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{ const found=all.find((r)=>recordMarker(r)===marker); if(found&&found.status==='planned'&&storedActionIsValid(found)&&!found.planReceipt) {found.planReceipt=receipt;found.proofState='planned-proof';found.proofError='';updated=true;} return all; });
+      if(!saved){$('pickupMessage').textContent='The proof was created, but browser storage could not save it. Check storage settings and retry.';return;}
+      if(!updated){$('pickupMessage').textContent='This action changed in another tab before the proof could be stored.';renderActions();return;}
+      $('pickupMessage').textContent='Pre-action server proof stored.'; renderActions();
+    });
   } catch(error) { $('pickupMessage').textContent=error.message; }
   finally { state.actionLocks.delete(`plan:${marker}`); }
 }
@@ -1195,36 +1201,41 @@ async function obtainCompletionReceipt(snapshot) {
 async function completeRecord(marker) {
   if (state.actionLocks.has(`complete:${marker}`)) return; state.actionLocks.add(`complete:${marker}`);
   try {
-    const snapshot=storage.getArray(STORAGE_ACTIONS).find((r)=>recordMarker(r)===marker);
-    if (!snapshot||snapshot.status==='completed') return;
-    if (!storedActionIsValid(snapshot)) { $('pickupMessage').textContent='This saved action is malformed and cannot be completed.'; renderActions(); return; }
-    const planned=scheduledDateTime(snapshot); if(!planned) { $('pickupMessage').textContent='This action has an invalid schedule.'; return; }
-    if (planned.getTime()>Date.now()) { $('pickupMessage').textContent='This action is scheduled for the future and cannot be completed yet.'; renderActions(); return; }
-    let proof=null; let proofError=''; let proofErrorCode='';
-    if (snapshot.planReceipt) { try { proof=await obtainCompletionReceipt(snapshot); } catch(error) { proofError=boundedText(error.message,220); proofErrorCode=boundedText(error.code,60); } }
-    const proofPermanent = proofErrorCode === 'BAD_PLAN_RECEIPT';
-    const completedAt=new Date().toISOString();
-    let updated=false;
-    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{ const found=all.find((r)=>recordMarker(r)===marker); if(!found||found.status!=='planned'||!storedActionIsValid(found))return all; found.status='completed';found.completedAt=completedAt;if(proof){found.completionReceipt=proof.receipt;found.serverAttestedAt=proof.completedAt;found.proofError='';found.proofErrorCode='';}else if(proofError){found.proofError=proofError;found.proofErrorCode=proofErrorCode;if(proofPermanent)found.proofState='completion-unavailable';}updated=true; return all; });
-    if(!saved){$('pickupMessage').textContent='Could not update local history.';return;}
-    if(!updated){$('pickupMessage').textContent='This action changed in another tab before completion could be saved.';renderImpact();return;}
-    $('pickupMessage').textContent=proof?'Completion recorded and server-attested.' : proofPermanent?'Completion recorded locally. The original pre-action proof is expired or invalid, so this completion cannot be retroactively server-attested.' : snapshot.planReceipt?'Completion recorded locally; server attestation failed. You can retry attestation.' : 'Completion recorded locally. No pre-action proof existed, so this completion cannot be retroactively server-attested.';
-    renderActions(); await renderImpact();
+    await withActionOperationLock(marker, async () => {
+      const snapshot=storage.getArray(STORAGE_ACTIONS).find((r)=>recordMarker(r)===marker);
+      if (!snapshot||snapshot.status==='completed') return;
+      if (!storedActionIsValid(snapshot)) { $('pickupMessage').textContent='This saved action is malformed and cannot be completed.'; renderActions(); return; }
+      const planned=scheduledDateTime(snapshot); if(!planned) { $('pickupMessage').textContent='This action has an invalid schedule.'; return; }
+      if (planned.getTime()>Date.now()) { $('pickupMessage').textContent='This action is scheduled for the future and cannot be completed yet.'; renderActions(); return; }
+      let proof=null; let proofError=''; let proofErrorCode='';
+      if (snapshot.planReceipt) { try { proof=await obtainCompletionReceipt(snapshot); } catch(error) { proofError=boundedText(error.message,220); proofErrorCode=boundedText(error.code,60); } }
+      const proofPermanent = proofErrorCode === 'BAD_PLAN_RECEIPT';
+      const completedAt=new Date().toISOString();
+      let updated=false;
+      const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{ const found=all.find((r)=>recordMarker(r)===marker); if(!found||found.status!=='planned'||!storedActionIsValid(found))return all; found.status='completed';found.completedAt=completedAt;if(proof){found.completionReceipt=proof.receipt;found.serverAttestedAt=proof.completedAt;found.proofError='';found.proofErrorCode='';}else if(proofError){found.proofError=proofError;found.proofErrorCode=proofErrorCode;if(proofPermanent)found.proofState='completion-unavailable';}updated=true; return all; });
+      if(!saved){$('pickupMessage').textContent='Could not update local history.';return;}
+      if(!updated){$('pickupMessage').textContent='This action changed in another tab before completion could be saved.';renderImpact();return;}
+      $('pickupMessage').textContent=proof?'Completion recorded and server-attested.' : proofPermanent?'Completion recorded locally. The original pre-action proof is expired or invalid, so this completion cannot be retroactively server-attested.' : snapshot.planReceipt?'Completion recorded locally; server attestation failed. You can retry attestation.' : 'Completion recorded locally. No pre-action proof existed, so this completion cannot be retroactively server-attested.';
+      renderActions(); await renderImpact();
+    });
   } finally { state.actionLocks.delete(`complete:${marker}`); }
 }
 async function retryCompletionProof(marker) {
   if(state.actionLocks.has(`attest:${marker}`))return;state.actionLocks.add(`attest:${marker}`);
   try{
-    const snapshot=storage.getArray(STORAGE_ACTIONS).find((r)=>recordMarker(r)===marker);
-    if(!snapshot||snapshot.status!=='completed')return;
-    if(!storedActionIsValid(snapshot) || snapshot.action!=='dropoff' || snapshot.isDemo===true){$('pickupMessage').textContent='This saved action is invalid or demo-only and cannot be server-attested.';renderActions();return;}
-    if(!snapshot.planReceipt){$('pickupMessage').textContent='No pre-action proof exists. This completion cannot be retroactively server-attested.';return;}
-    const proof=await obtainCompletionReceipt(snapshot);
-    let updated=false;
-    const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{const found=all.find((r)=>recordMarker(r)===marker);if(found&&found.status==='completed'&&storedActionIsValid(found)){found.completionReceipt=proof.receipt;found.serverAttestedAt=proof.completedAt;found.proofError='';found.proofErrorCode='';updated=true;}return all;});
-    if(!saved){$('pickupMessage').textContent='Server attestation succeeded, but browser storage could not save the receipt.';return;}
-    if(!updated){$('pickupMessage').textContent='This action changed in another tab before the attestation could be stored.';renderImpact();return;}
-    $('pickupMessage').textContent='Server attestation recovered.';renderActions();await renderImpact();
+    await withActionOperationLock(marker, async () => {
+      const snapshot=storage.getArray(STORAGE_ACTIONS).find((r)=>recordMarker(r)===marker);
+      if(!snapshot||snapshot.status!=='completed')return;
+      if(!storedActionIsValid(snapshot) || snapshot.action!=='dropoff' || snapshot.isDemo===true){$('pickupMessage').textContent='This saved action is invalid or demo-only and cannot be server-attested.';renderActions();return;}
+      if(snapshot.completionReceipt){$('pickupMessage').textContent='This completion already has a stored server attestation.';renderActions();return;}
+      if(!snapshot.planReceipt){$('pickupMessage').textContent='No pre-action proof exists. This completion cannot be retroactively server-attested.';return;}
+      const proof=await obtainCompletionReceipt(snapshot);
+      let updated=false;
+      const saved=await mutateStoredArray(STORAGE_ACTIONS,(all)=>{const found=all.find((r)=>recordMarker(r)===marker);if(found&&found.status==='completed'&&storedActionIsValid(found)&&!found.completionReceipt){found.completionReceipt=proof.receipt;found.serverAttestedAt=proof.completedAt;found.proofError='';found.proofErrorCode='';updated=true;}return all;});
+      if(!saved){$('pickupMessage').textContent='Server attestation succeeded, but browser storage could not save the receipt.';return;}
+      if(!updated){$('pickupMessage').textContent='This action changed in another tab before the attestation could be stored.';renderImpact();return;}
+      $('pickupMessage').textContent='Server attestation recovered.';renderActions();await renderImpact();
+    });
   }catch(error){
     if(error.code==='BAD_PLAN_RECEIPT'){
       await mutateStoredArray(STORAGE_ACTIONS,(all)=>{const found=all.find((r)=>recordMarker(r)===marker);if(found&&found.status==='completed'){found.proofState='completion-unavailable';found.proofErrorCode='BAD_PLAN_RECEIPT';found.proofError=boundedText(error.message,220);}return all;});

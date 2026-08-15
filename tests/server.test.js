@@ -566,9 +566,9 @@ test('PWA cache and frontend script version stay synchronized', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   const sw = await fs.readFile(path.join(root, 'public', 'sw.js'), 'utf8');
-  assert.match(html, /app\.js\?v=0\.14\.5/);
-  assert.match(sw, /cleanup-v0\.14\.5/);
-  assert.match(sw, /app\.js\?v=0\.14\.5/);
+  assert.match(html, /app\.js\?v=0\.14\.6/);
+  assert.match(sw, /cleanup-v0\.14\.6/);
+  assert.match(sw, /app\.js\?v=0\.14\.6/);
 });
 
 test('new analysis attempts clear stale results before network work begins', async () => {
@@ -1017,7 +1017,7 @@ test('service worker never caches API routes and respects no-store', async () =>
   const sw = await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /no-store/);
-  assert.match(sw, /cleanup-v0\.14\.5/);
+  assert.match(sw, /cleanup-v0\.14\.6/);
 });
 
 test('Render Blueprint generates receipt secret and wires global AI budget', async () => {
@@ -1176,16 +1176,16 @@ test('mobile CSS includes safe-area bottom padding and does not ellipsize AI sta
   assert.match(css,/\.status-pill \{ max-width:none; white-space:normal; overflow:visible; text-overflow:clip/);
 });
 
-test('manifest and shell asset versions are synchronized to 0.14.5', async () => {
+test('manifest and shell asset versions are synchronized to 0.14.6', async () => {
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const html=await fs.readFile(path.join(root,'public','index.html'),'utf8');
   const sw=await fs.readFile(path.join(root,'public','sw.js'),'utf8');
   const manifest=JSON.parse(await fs.readFile(path.join(root,'public','manifest.webmanifest'),'utf8'));
-  assert.match(html,/styles\.css\?v=0\.14\.5/);
-  assert.match(html,/manifest\.webmanifest\?v=0\.14\.5/);
-  assert.match(sw,/styles\.css\?v=0\.14\.5/);
+  assert.match(html,/styles\.css\?v=0\.14\.6/);
+  assert.match(html,/manifest\.webmanifest\?v=0\.14\.6/);
+  assert.match(sw,/styles\.css\?v=0\.14\.6/);
   assert.equal(manifest.id,'/?source=pwa');
-  assert.match(manifest.icons[0].src,/v=0\.14\.5/);
+  assert.match(manifest.icons[0].src,/v=0\.14\.6/);
 });
 
 test('battery routing requires explicit battery acceptance rather than generic electronics', () => {
@@ -1347,7 +1347,7 @@ test('repository baseline includes complete cleanup history documents without ra
   const root=path.resolve(new URL('..',import.meta.url).pathname);
   const changelog=await fs.readFile(path.join(root,'CHANGELOG.md'),'utf8');
   const history=await fs.readFile(path.join(root,'docs','PROJECT_HISTORY.md'),'utf8');
-  assert.match(changelog,/0\.14\.5/);
+  assert.match(changelog,/0\.14\.6/);
   assert.match(history,/changed combined `cleanup` implementation/);
   assert.match(history,/does not contain the raw Android\/web reference repositories/);
 });
@@ -1565,7 +1565,11 @@ test('completed local records require valid status and a consistent completion t
 test('completion mutation detects a concurrent no-op instead of claiming a local write succeeded', async () => {
   const root = path.resolve(new URL('..', import.meta.url).pathname);
   const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
-  assert.match(frontend, /let updated=false;[\s\S]{0,800}found\.status!=='planned'[\s\S]{0,500}if\(!updated\)[\s\S]{0,180}changed in another tab before completion could be saved/);
+  const block = frontend.match(/async function completeRecord\(marker\) \{[\s\S]*?\n\}\nasync function retryCompletionProof/)?.[0] || '';
+  assert.match(block, /let updated=false/);
+  assert.match(block, /found\.status!=='planned'/);
+  assert.match(block, /if\(!updated\)/);
+  assert.match(block, /changed in another tab before completion could be saved/);
 });
 
 
@@ -1595,4 +1599,23 @@ test('proof retry buttons are disabled when the deployment uses a non-persistent
   const block = frontend.match(/function completionControl\(record\) \{[\s\S]*?\n\}/)?.[0] || '';
   assert.match(block, /actionReceiptPersistent === false[\s\S]{0,180}Proof secret unavailable/);
   assert.match(block, /!record\.planReceipt&&record\.facilityProof&&state\.actionReceiptPersistent === false/);
+});
+
+
+test('plan, completion, and attestation operations use a shared per-action cross-tab lock', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /async function withActionOperationLock\(marker, task\)[\s\S]{0,150}action-operation:\$\{marker\}/);
+  assert.match(frontend, /async function retryPlanProof[\s\S]{0,260}await withActionOperationLock\(marker/);
+  assert.match(frontend, /async function completeRecord[\s\S]{0,260}await withActionOperationLock\(marker/);
+  assert.match(frontend, /async function retryCompletionProof[\s\S]{0,260}await withActionOperationLock\(marker/);
+});
+
+test('waiting tabs re-read action state and do not mint duplicate stored proofs', async () => {
+  const root = path.resolve(new URL('..', import.meta.url).pathname);
+  const frontend = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(frontend, /snapshot\.planReceipt[\s\S]{0,160}already stored for this action/);
+  assert.match(frontend, /snapshot\.completionReceipt[\s\S]{0,160}already has a stored server attestation/);
+  assert.match(frontend, /storedActionIsValid\(found\)&&!found\.planReceipt/);
+  assert.match(frontend, /storedActionIsValid\(found\)&&!found\.completionReceipt/);
 });
