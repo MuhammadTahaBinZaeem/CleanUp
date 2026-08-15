@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const APP_VERSION = '0.14.1';
+const APP_VERSION = '0.14.2';
 const STORAGE_SCANS = 'cleanup_scans';
 const STORAGE_ACTIONS = 'cleanup_actions';
 const MAX_SELECTED_FILE_BYTES = 30 * 1024 * 1024;
@@ -28,6 +28,7 @@ const state = {
   locationGeneration: 0,
   verifiedReceiptDetails: new Map(),
   impactController: null,
+  impactVerificationState: 'idle',
   actionLocks: new Set(),
   healthRetryTimer: null,
   healthRetryAttempt: 0,
@@ -150,6 +151,11 @@ async function fetchJson(url, options = {}, timeoutMs = 25000) {
       wrapped.code = cancelled ? 'REQUEST_CANCELLED' : 'REQUEST_TIMEOUT';
       throw wrapped;
     }
+    if (error instanceof TypeError) {
+      const wrapped = new Error(navigator.onLine === false ? 'You appear to be offline.' : 'Network request failed. Check your connection and try again.');
+      wrapped.code = 'NETWORK_ERROR';
+      throw wrapped;
+    }
     throw error;
   } finally {
     clearTimeout(timer);
@@ -162,13 +168,15 @@ function clearHealthRetry() {
   state.healthRetryTimer = null;
 }
 function scheduleHealthRetry() {
-  if (state.healthRetryTimer || navigator.onLine === false || state.healthRetryAttempt >= 6) return;
-  const delays = [4000, 8000, 15000, 30000, 30000, 30000];
-  const delay = delays[state.healthRetryAttempt] || 30000;
-  state.healthRetryAttempt += 1;
+  if (state.healthRetryTimer || navigator.onLine === false) return;
+  const delays = [4000, 8000, 15000, 30000, 60000, 120000];
+  const index = Math.min(state.healthRetryAttempt, delays.length - 1);
+  const delay = delays[index];
+  state.healthRetryAttempt = Math.min(index + 1, delays.length - 1);
   state.healthRetryTimer = setTimeout(() => {
     state.healthRetryTimer = null;
     if (document.visibilityState === 'visible') health();
+    else scheduleHealthRetry();
   }, delay);
 }
 async function health() {
@@ -1002,6 +1010,14 @@ function recordFingerprint(record) {
   return [record.action,record.itemName,record.material,record.facilityId,record.weight,record.plannedAtIso].map((x)=>String(x??'')).join('|').slice(0,1000);
 }
 function scheduledDateTime(record) { const iso=recordPlannedIso(record); return iso?new Date(iso):null; }
+function storedActionIsValid(record) {
+  const action = record?.action;
+  if (typeof record?.isDemo !== 'boolean' || !['dropoff','pickup'].includes(action)) return false;
+  if (!recordMarker(record) || !recordPlannedIso(record) || !strictStoredWeight(record?.weight)) return false;
+  if (!boundedText(record?.itemName || record?.material, 160)) return false;
+  if (action === 'pickup') return record.isDemo === true;
+  return Boolean(boundedText(record?.facilityId, 120) && boundedText(record?.facilityName, 160));
+}
 function selectedFacilityHasProof(facility) { return typeof facility?.facility_proof==='string' && facility.facility_proof.length>20 && compatibilityStatus(facility)==='possible-match' && !facility.demo; }
 
 async function requestPlanProof(record) {
@@ -1067,12 +1083,17 @@ function proofDetailsMatchRecord(record, details) {
     (!record.serverAttestedAt || canonicalIso(record.serverAttestedAt)===details.completedAt);
 }
 function proofBadge(record) {
+  if (record?.validRecord === false) return '<span class="danger-tag">Invalid local record</span>';
   if (record?.isDemo===true) return '<span class="demo-badge">DEMO</span>';
   if (record?.status!=='completed') return record?.planReceipt?'<span class="neutral-tag">Plan proof stored</span>':'';
   if (!record?.planReceipt) return '<span class="neutral-tag">No pre-action proof</span>';
   if (!record?.completionReceipt) return '<span class="neutral-tag">Completion not attested</span>';
   const details=state.verifiedReceiptDetails.get(record.completionReceipt);
-  if (!details) return '<span class="neutral-tag">Proof stored · checking</span>';
+  if (!details) {
+    if (state.impactVerificationState==='verified') return '<span class="danger-tag">Stored proof did not validate</span>';
+    if (state.impactVerificationState==='unavailable') return '<span class="neutral-tag">Proof stored · revalidation unavailable</span>';
+    return '<span class="neutral-tag">Proof stored · checking</span>';
+  }
   return proofDetailsMatchRecord(record,details)?'<span class="safe-tag">Server-attested</span>':'<span class="danger-tag">Signed proof differs</span>';
 }
 function completionControl(record) {
@@ -1099,7 +1120,7 @@ function safeHistoryRecord(record) {
     serverAttestedAt:canonicalIso(record?.serverAttestedAt),facilityProof:typeof record?.facilityProof==='string'?record.facilityProof.slice(0,20000):'',
     note:boundedText(record?.note,300),completedAt:canonicalIso(record?.completedAt),
     proofState:boundedText(record?.proofState,40),proofErrorCode:boundedText(record?.proofErrorCode,60),proofError:boundedText(record?.proofError,220),
-    validRecord:typeof record?.isDemo==='boolean'&&['dropoff','pickup'].includes(record?.action)&&Boolean(recordPlannedIso(record))&&Boolean(recordMarker(record))
+    validRecord:storedActionIsValid(record)
   };
 }
 function formatPlanned(record) {
@@ -1122,6 +1143,7 @@ async function retryPlanProof(marker) {
   try {
     const snapshot=storage.getArray(STORAGE_ACTIONS).find((r)=>recordMarker(r)===marker);
     if (!snapshot||snapshot.status==='completed') { $('pickupMessage').textContent='No pre-action proof can be created after completion.'; return; }
+    if (!storedActionIsValid(snapshot) || snapshot.action !== 'dropoff' || snapshot.isDemo === true) { $('pickupMessage').textContent='This saved action is invalid or demo-only and cannot receive a server plan proof.'; renderActions(); return; }
     if (!snapshot.facilityProof) { $('pickupMessage').textContent='Search the facility again to obtain a fresh matched proof.'; return; }
     if (Date.parse(recordPlannedIso(snapshot)||0)<Date.now()-60_000) { $('pickupMessage').textContent='The scheduled time has passed; a pre-action proof cannot be created retroactively.'; return; }
     const receipt=await requestPlanProof(snapshot);
@@ -1141,6 +1163,7 @@ async function completeRecord(marker) {
   try {
     const snapshot=storage.getArray(STORAGE_ACTIONS).find((r)=>recordMarker(r)===marker);
     if (!snapshot||snapshot.status==='completed') return;
+    if (!storedActionIsValid(snapshot)) { $('pickupMessage').textContent='This saved action is malformed and cannot be completed.'; renderActions(); return; }
     const planned=scheduledDateTime(snapshot); if(!planned) { $('pickupMessage').textContent='This action has an invalid schedule.'; return; }
     if (planned.getTime()>Date.now()) { $('pickupMessage').textContent='This action is scheduled for the future and cannot be completed yet.'; renderActions(); return; }
     let proof=null; let proofError=''; let proofErrorCode='';
@@ -1158,6 +1181,7 @@ async function retryCompletionProof(marker) {
   try{
     const snapshot=storage.getArray(STORAGE_ACTIONS).find((r)=>recordMarker(r)===marker);
     if(!snapshot||snapshot.status!=='completed')return;
+    if(!storedActionIsValid(snapshot) || snapshot.action!=='dropoff' || snapshot.isDemo===true){$('pickupMessage').textContent='This saved action is invalid or demo-only and cannot be server-attested.';renderActions();return;}
     if(!snapshot.planReceipt){$('pickupMessage').textContent='No pre-action proof exists. This completion cannot be retroactively server-attested.';return;}
     const proof=await obtainCompletionReceipt(snapshot);
     await mutateStoredArray(STORAGE_ACTIONS,(all)=>{const found=all.find((r)=>recordMarker(r)===marker);if(found&&found.status==='completed'){found.completionReceipt=proof.receipt;found.serverAttestedAt=proof.completedAt;found.proofError='';}return all;});
@@ -1187,25 +1211,48 @@ async function renderImpact() {
   $('metricScans').textContent=String(realItemCount);
   const actions=storage.getArray(STORAGE_ACTIONS);
   const receipts=[...new Set(actions.filter((r)=>r?.status==='completed'&&typeof r?.completionReceipt==='string').map((r)=>r.completionReceipt).filter((x)=>x.length>20&&x.length<=20000))];
-  state.impactController?.abort(); const controller=new AbortController(); state.impactController=controller;
+  state.impactController?.abort(); state.impactController=null;
   state.verifiedReceiptDetails=new Map();
-  if(!receipts.length){$('metricPickups').textContent='0';$('metricKg').textContent='0.0';if($('impactProofNote'))$('impactProofNote').textContent='No server-attested matched completions are stored in this browser yet. Physical handoff remains self-reported.';renderActions();if(state.impactController===controller)state.impactController=null;return;}
+  if(!receipts.length){
+    state.impactVerificationState='idle';
+    $('metricPickups').textContent='0';$('metricKg').textContent='0.0';
+    if($('impactProofNote'))$('impactProofNote').textContent='No server-attested matched completions are stored in this browser yet. Physical handoff remains self-reported.';
+    renderActions(); return;
+  }
+  if(navigator.onLine===false){
+    state.impactVerificationState='unavailable';
+    $('metricPickups').textContent='0';$('metricKg').textContent='0.0';
+    if($('impactProofNote'))$('impactProofNote').textContent='Offline — attested impact will be revalidated when the connection returns. Local history remains available below.';
+    renderActions(); return;
+  }
+  const controller=new AbortController(); state.impactController=controller; state.impactVerificationState='checking'; renderActions();
   try{
     const payload=await fetchJson('/api/action/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receipts}),signal:controller.signal},15000);
+    if(state.impactController!==controller)return;
     const requested=new Set(receipts); const completions=(Array.isArray(payload.completions)?payload.completions:[]).map((x)=>normalizeVerifiedCompletion(x,requested)).filter(Boolean);
     const seen=new Set(); const unique=completions.filter((x)=>{if(seen.has(x.planId))return false;seen.add(x.planId);return true;});
     for(const item of unique)state.verifiedReceiptDetails.set(item.receipt,item);
-    $('metricPickups').textContent=String(unique.length);$('metricKg').textContent=unique.reduce((sum,item)=>sum+item.weight,0).toFixed(1);if($('impactProofNote'))$('impactProofNote').textContent=`${unique.length} signed completion record${unique.length===1?'':'s'} revalidated by cleanup. Physical handoff remains self-reported.`;
-  }catch(error){if(error.code!=='REQUEST_CANCELLED'){$('metricPickups').textContent='0';$('metricKg').textContent='0.0';if($('impactProofNote'))$('impactProofNote').textContent='Attested impact could not be revalidated right now; local history is still shown below.';}}
-  finally{if(state.impactController===controller)state.impactController=null;renderActions();}
+    state.impactVerificationState='verified';
+    $('metricPickups').textContent=String(unique.length);$('metricKg').textContent=unique.reduce((sum,item)=>sum+item.weight,0).toFixed(1);
+    if($('impactProofNote'))$('impactProofNote').textContent=`${unique.length} signed completion record${unique.length===1?'':'s'} revalidated by cleanup. Physical handoff remains self-reported.`;
+  }catch(error){
+    if(error.code!=='REQUEST_CANCELLED'&&state.impactController===controller){
+      state.impactVerificationState='unavailable';
+      $('metricPickups').textContent='0';$('metricKg').textContent='0.0';
+      if($('impactProofNote'))$('impactProofNote').textContent='Attested impact could not be revalidated right now; local history is still shown below.';
+    }
+  }finally{
+    if(state.impactController===controller){state.impactController=null;renderActions();}
+  }
 }
 $('clearDataBtn').addEventListener('click', () => {
   if (!window.confirm('Clear all locally stored scans and action history from this browser? This cannot be undone.')) return;
   const scansRemoved = storage.remove(STORAGE_SCANS);
   const actionsRemoved = storage.remove(STORAGE_ACTIONS);
   state.verifiedReceiptDetails=new Map();
+  state.impactVerificationState='idle';
   $('pickupMessage').textContent = scansRemoved && actionsRemoved ? 'Local history cleared.' : 'Some local history could not be cleared.';
-  renderActions(); renderImpact();
+  renderImpact();
 });
 
 health();
@@ -1218,7 +1265,7 @@ window.addEventListener('online', () => { state.healthRetryAttempt = 0; health()
 window.addEventListener('offline', () => { clearHealthRetry(); health(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { state.healthRetryAttempt = 0; health(); updateScheduleBounds(); renderImpact(); } });
 window.addEventListener('storage', (event) => {
-  if (event.key === STORAGE_ACTIONS || event.key === STORAGE_SCANS) { renderActions(); renderImpact(); }
+  if (event.key === STORAGE_ACTIONS || event.key === STORAGE_SCANS) renderImpact();
 });
 setInterval(() => { updateScheduleBounds(); if (document.visibilityState === 'visible') renderActions(); }, 60_000);
 window.addEventListener('beforeunload', () => {

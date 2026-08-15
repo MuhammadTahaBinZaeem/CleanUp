@@ -2,6 +2,17 @@
 
 All notable development milestones for **cleanup** are recorded here. The repository begins with the substantially rebuilt web application; it does **not** include raw copies of the older reference repositories used during early product research.
 
+## 0.14.2 — Proof-state and recovery hardening
+
+- Corrupted/manual local action records now fail closed before completion or proof-retry operations.
+- Pickup records must remain explicitly demo-only, and drop-off history must retain a valid weight and destination.
+- Health checks continue at a bounded two-minute cadence after long outages instead of permanently giving up in an open tab.
+- Successful receipt verification now marks omitted/tampered stored proofs as invalid instead of leaving them stuck on “checking.”
+- Offline proof views avoid a doomed verification request and clearly show revalidation as unavailable.
+- Stale/cancelled impact requests can no longer repaint proof state after a newer verification starts.
+- Browser fetch failures now surface a stable network message instead of raw “Failed to fetch” errors.
+- PWA/server cache identity bumped to 0.14.2.
+
 ## 0.14.1 — Deep bug-fix audit
 
 - Fixed Unicode address-cache collisions for Urdu, Arabic and other non-ASCII location searches.

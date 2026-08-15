@@ -1,5 +1,5 @@
-const CACHE = 'cleanup-v0.14.1';
-const CORE = ['/', '/styles.css?v=0.14.1', '/app.js?v=0.14.1', '/manifest.webmanifest?v=0.14.1', '/icon.svg?v=0.14.1'];
+const CACHE = 'cleanup-v0.14.2';
+const CORE = ['/', '/styles.css?v=0.14.2', '/app.js?v=0.14.2', '/manifest.webmanifest?v=0.14.2', '/icon.svg?v=0.14.2'];
 self.addEventListener('install', (event) => { self.skipWaiting(); event.waitUntil(caches.open(CACHE).then((cache)=>cache.addAll(CORE)).catch(()=>{})); });
 self.addEventListener('activate', (event) => { event.waitUntil(caches.keys().then((keys)=>Promise.all(keys.filter((key)=>key!==CACHE).map((key)=>caches.delete(key)))).then(()=>self.clients.claim())); });
 function cacheable(response) { return response?.ok && !/\bno-store\b/i.test(response.headers.get('cache-control')||''); }
